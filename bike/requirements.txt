@@ -1,0 +1,4 @@
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+bleak>=0.21,<3
+hidapi>=0.14,<1

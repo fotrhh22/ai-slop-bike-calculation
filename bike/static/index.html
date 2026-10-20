@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5ef">
+  <title>자전거 발전 측정소</title>
+  <link rel="stylesheet" href="/static/station.css">
+  <script src="/static/station.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/">AI SLOP STOP <span>/ ENERGY STATION</span></a>
+      <span id="connection" class="badge"><i></i>연결 대기</span>
+    </header>
+
+    <div id="demo-banner" class="demo-banner" hidden>시뮬레이션 모드 · 아래 수치는 테스트 데이터입니다. 실제 발전량이 아닙니다.</div>
+    <div id="offline" class="notice danger" role="alert" hidden>Mac 수신 프로그램에 연결할 수 없습니다. 화면 갱신이 중단되었습니다.</div>
+    <div id="error" class="notice danger" role="alert" hidden></div>
+
+    <main>
+      <section class="intro">
+        <div><p class="eyebrow">PEDAL / MEASURE / UNDERSTAND</p><h1>내 힘으로 만든 전기</h1>
+        <p class="subtext">3분 동안 페달을 밟고, 실제로 전달한 전력량을 확인하세요.</p></div>
+        <span id="session-status" class="status-label">참가자 준비</span>
+      </section>
+
+      <section class="dashboard" aria-label="실시간 계측">
+        <article class="energy-card">
+          <div class="card-label"><span>이번 참가자 전력량</span><span id="mode-label">실측</span></div>
+          <div class="energy-value"><span id="energy">0.0</span><span class="unit">mWh</span></div>
+          <p id="energy-wh" class="energy-conversion">0.000000 Wh</p>
+          <div class="energy-footer"><span>USB 출력에서 부하로 전달한 에너지</span><span id="participant-label">—</span></div>
+        </article>
+
+        <article class="timer-card">
+          <div class="card-label"><span>남은 시간</span><span>03:00 SESSION</span></div>
+          <div id="timer" class="timer-value">03:00</div>
+          <div class="track"><div id="time-progress"></div></div>
+          <p id="timer-note">측정값이 수신되면 시작할 수 있습니다.</p>
+        </article>
+      </section>
+
+      <section class="readings" aria-label="현재 전력과 측정 상태">
+        <article><span class="small-label">현재 전력</span><strong id="power">— <small>W</small></strong></article>
+        <article><span class="small-label">전압 / 전류</span><strong class="compact" id="electrical">— V / — A</strong></article>
+        <article><span class="small-label">계측 구간 비율</span><strong id="coverage">— <small>%</small></strong></article>
+      </section>
+
+      <section class="chart-card">
+        <div class="card-label"><span>이번 측정의 전력 변화</span><span>0 — 180초 · W</span></div>
+        <svg id="chart" viewBox="0 0 900 110" preserveAspectRatio="none" role="img" aria-label="전력 변화 그래프">
+          <path class="grid" d="M0 25H900 M0 65H900 M0 105H900"></path>
+          <path id="chart-line" d=""></path>
+        </svg>
+        <p class="chart-note">미수신 구간은 누적에서 제외합니다. 같은 시간이라도 계측 구간 비율이 낮은 결과는 직접 비교하지 마세요.</p>
+      </section>
+
+      <section class="control-card" aria-label="참가자 조작">
+        <div class="fields">
+          <label>참가자 이름 또는 번호<input id="participant" maxlength="80" placeholder="예: 참가자 001" autocomplete="off"></label>
+          <label>비교할 AI 소비량 <span>(선택)</span><div class="input-unit"><input id="target" type="number" min="0.000001" step="any" inputmode="decimal" placeholder="목표량 입력"><span>Wh</span></div></label>
+        </div>
+        <p id="target-result" class="target-result" hidden></p>
+        <div class="actions">
+          <button id="start" class="primary" disabled>3분 측정 시작 <span>↗</span></button>
+          <button id="stop" class="secondary" disabled>측정 종료</button>
+          <button id="reset" class="secondary" disabled>새 참가자</button>
+        </div>
+        <p id="session-note" class="footnote">시작 전에 받은 값은 참가자 전력량에 포함하지 않습니다. 기록은 Mac에 저장됩니다.</p>
+      </section>
+
+      <details id="device-panel" class="device-panel" open>
+        <summary>측정 기기 연결 <span id="device-name">선택된 기기 없음</span></summary>
+        <div class="device-body">
+          <div class="mode-switch" role="group" aria-label="데이터 모드">
+            <button id="usb-mode">실측 · USB 유선</button>
+            <button id="real-mode" class="selected">실측 · BLE</button>
+            <button id="demo-mode">시뮬레이션</button>
+          </div>
+          <p class="footnote">위에서 선택한 수신 방식 하나만 참가자 전력량에 누적합니다. USB·BLE를 모두 연결하면 아래에서 수신 상태를 비교할 수 있습니다.</p>
+          <div id="transport-controls">
+            <section class="transport-card">
+              <h3>USB 유선 <span id="usb-selected"></span></h3>
+              <div class="ble-controls">
+                <button id="usb-scan" class="secondary">USB 검색</button>
+                <select id="usb-devices" aria-label="검색된 USB FNB58"><option value="">먼저 USB를 검색하세요</option></select>
+                <button id="usb-connect" class="secondary">연결</button>
+                <button id="usb-disconnect" class="text-button">연결 해제</button>
+              </div>
+              <p id="usb-diagnostic" class="footnote" aria-live="polite">USB 연결 대기</p>
+            </section>
+            <section class="transport-card">
+              <h3>BLE 무선 <span id="ble-selected"></span></h3>
+              <div class="ble-controls">
+                <button id="scan" class="secondary">BLE 검색</button>
+                <select id="devices" aria-label="검색된 BLE FNB58"><option value="">먼저 BLE를 검색하세요</option></select>
+                <button id="connect" class="secondary">연결</button>
+                <button id="disconnect" class="text-button">연결 해제</button>
+              </div>
+              <p id="ble-diagnostic" class="footnote" aria-live="polite">BLE 연결 대기</p>
+            </section>
+          </div>
+          <p id="device-message" class="footnote">FNB58을 검색하고 연결하세요.</p>
+          <p class="footnote">USB: Mac ↔ 데이터 지원 마이크로 5핀 케이블 ↔ FNB58 전용 PC 포트. 두 통신의 동시 전송 지원은 실물 확인이 필요합니다. 수신 방식 변경은 측정 종료 후 가능합니다.</p>
+          <p class="footnote">USB·BLE 수신은 Mac에서 수행합니다. iPad는 같은 Wi-Fi에서 이 화면을 엽니다.</p>
+        </div>
+      </details>
+
+      <section class="history-card">
+        <div class="history-heading"><h2>최근 측정 기록</h2><a class="download" href="/api/export/sessions.csv">전체 CSV ↓</a></div>
+        <div class="table-wrap"><table><thead><tr><th>참가자 / 시각</th><th>구분</th><th>전력량</th><th>계측 비율</th><th>기록</th></tr></thead><tbody id="history"><tr><td colspan="5">아직 저장된 측정이 없습니다.</td></tr></tbody></table></div>
+      </section>
+    </main>
+    <footer>ENERGY STATION <span>W = 지금의 전력 · mWh = 시간에 따라 누적한 전력량</span></footer>
+  </div>
+</body>
+</html>
