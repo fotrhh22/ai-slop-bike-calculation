@@ -1,5 +1,23 @@
 # 자전거 발전 측정소
 
+## AI PASS 연동 (Phase 0–5)
+
+`codex/campaign-bike-flow`는 Render의 AI PASS 대기 목록과 연결합니다.
+프로젝트 루트 `.env.example`을 `.env.local`로 복사하고 `BIKE_API_BASE`, Render와 같은
+`BIKE_WORKER_TOKEN`(32자 이상)을 설정한 뒤 아래 기존 실행 명령을 사용하세요.
+대기 코드를 선택하면 참가자·목표가 자동 입력됩니다. Gemini는 토큰 전용으로 목표 Wh/달성률이 없으며
+수동 종료로 출력합니다. 오픈모델은 실제 GPU 목표 Wh에 대한 ×100 환산 목표 도달 시 자동 종료합니다.
+미달 수동 종료도 인쇄 대상입니다. 화면에는 원본 발전량 대신 ×100 환산값을 표시합니다.
+연동 모드의 목표/코드는 직접 편집하지 않으며, 공식 참가자는 USB/BLE 실측에서만 시작됩니다.
+
+AI 서버의 SQL와 설정을 먼저 적용해야 합니다:
+[전체 적용 안내](https://github.com/fotrhh22/ai-slop-stop/blob/codex/campaign-bike-flow/docs/campaign-bike-rollout.md).
+별도 터미널에서 새 ai-slop-stop의 printer_bridge worker를 실행해야 PT-210에 출력됩니다.
+이 Bike 서버 자체가 프린터로 중복 전송하지는 않습니다.
+
+BIKE_API_BASE를 설정하지 않으면 기존 독립 측정/장비 테스트 모드로 실행됩니다.
+기존 기록을 이어갈 때는 BIKE_DB_PATH에 기존 SQLite 절대 경로를 지정하고 이전 서버를 종료하세요.
+
 Mac이 FNB58에서 USB HID 또는 BLE 측정값을 받고, iPad Safari가 Mac의 웹 화면에 접속하는 독립 측정 프로그램입니다. 기존 AI 챌린지 서버·Supabase·Render 배포와 별도로 실행합니다. iOS 앱, Web Bluetooth, 외부 CDN, 인터넷 연결은 필요하지 않습니다. 같은 Wi-Fi 안에서 Mac과 iPad가 서로 접속할 수 있어야 합니다.
 
 ## 실행

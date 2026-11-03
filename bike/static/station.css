@@ -56,3 +56,10 @@
   .intro .subtext{word-break:keep-all;overflow-wrap:break-word;text-wrap:pretty}
   .intro .subtext>span:first-child{display:block}
 }
+/* Cloud participant queue stays usable on iPad without exposing station credentials. */
+.campaign-panel { background: #fff; border: 1px solid #d4d4cc; border-radius: 20px; padding: 22px; margin-bottom: 22px; }
+.campaign-panel > input { max-width: 320px; margin: 8px 0 14px; }
+.campaign-queue { display: flex; flex-wrap: wrap; gap: 10px; max-height: 240px; overflow-y: auto; }
+.queue-participant { padding: 14px 16px; border: 1px solid #ccc; border-radius: 12px; background: #f8f8f2; font: inherit; cursor: pointer; }
+.queue-participant.selected { border-color: #232323; background: #fff09a; }
+.queue-participant:disabled { opacity: .5; cursor: default; }

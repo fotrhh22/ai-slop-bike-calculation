@@ -15,17 +15,22 @@ from pydantic import BaseModel, Field
 
 from .measurement import Station, StationError, Store
 from .receiver import ReceiverHub
+from .campaign import CampaignSync, client_from_env
 
 STATIC = Path(__file__).parent / "static"
 
 
-def create_app(db_path=None):
+def create_app(db_path=None, campaign_client=None):
     @asynccontextmanager
     async def lifespan(app):
+        client = campaign_client if campaign_client is not None else client_from_env()
         store = Store(db_path or os.environ.get("BIKE_DB_PATH", str(Path(__file__).parent / "data/station.sqlite3")))
         station = Station(store)
         receiver = ReceiverHub(station)
         app.state.station, app.state.receiver = station, receiver
+        campaign=CampaignSync(store,station,client)
+        app.state.campaign=campaign
+        sync_task=asyncio.create_task(campaign.run())
 
         async def heartbeat():
             while True:
@@ -39,8 +44,13 @@ def create_app(db_path=None):
             yield
         finally:
             task.cancel()
+            sync_task.cancel()
             try:
                 await task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await sync_task
             except asyncio.CancelledError:
                 pass
             await receiver.stop()
@@ -77,7 +87,15 @@ def create_app(db_path=None):
     @app.get("/api/state")
     async def state():
         # All state mutations run on the asyncio event loop, not worker threads.
-        return app.state.receiver.state()
+        return {**app.state.receiver.state(),'campaign':app.state.campaign.snapshot()}
+
+    @app.get('/api/campaign/queue')
+    async def campaign_queue():
+        return app.state.campaign.snapshot()
+
+    @app.post('/api/campaign/select')
+    async def campaign_select(body: SelectionBody):
+        return await app.state.campaign.select(body.entry_id)
 
     # async endpoints below intentionally do not await while changing session
     # state; simultaneous iPad Start requests are serialized by the event loop.
@@ -119,10 +137,13 @@ def create_app(db_path=None):
 
     @app.post("/api/session/start")
     async def start(body: StartBody):
+        if app.state.campaign.client is not None:
+            return await app.state.campaign.start()
         return app.state.station.start(body.participant, body.target_wh)
 
     @app.post("/api/session/stop")
     async def stop():
+        if app.state.campaign.starting: raise StationError('참가자 시작을 확인하는 중입니다. 잠시 후 종료해 주세요.')
         station = app.state.station
         station.tick()
         if station.session and station.session["status"] == "running":
@@ -131,7 +152,9 @@ def create_app(db_path=None):
 
     @app.post("/api/session/reset")
     async def reset():
+        if app.state.campaign.starting: raise StationError('참가자 시작을 확인하는 중입니다.')
         app.state.station.reset()
+        app.state.campaign.selected=None
         return {"ok": True}
 
     @app.get("/api/export/sessions.csv")
@@ -151,6 +174,10 @@ def create_app(db_path=None):
 class StartBody(BaseModel):
     participant: str = Field(default="", max_length=80)
     target_wh: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+
+
+class SelectionBody(BaseModel):
+    entry_id: str = Field(min_length=1,max_length=100)
 
 
 class TransportBody(BaseModel):

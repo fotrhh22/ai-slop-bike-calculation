@@ -3,6 +3,7 @@ const el = (id) => document.getElementById(id);
 let state = null;
 let pending = false;
 let historyKey = "";
+let queueKey = "";
 const fmt = (value, digits = 2) => Number(value || 0).toFixed(digits);
 const labels = { running: "측정 중", completed: "측정 완료", stopped: "측정 중단", interrupted: "프로그램 중단" };
 
@@ -54,7 +55,7 @@ function render(data) {
   el("connection").replaceChildren(Object.assign(document.createElement("i"), {}),
     document.createTextNode(data.fresh ? (demo ? "테스트 수신 중" : "실측 수신 중") : data.connected ? "데이터 대기 / 지연" : "연결 대기"));
   el("session-status").textContent = session ? labels[session.status] || session.status : "참가자 준비";
-  const energy = session?.energy_mwh || 0;
+  const energy = (session?.campaign_energy_wh || 0) * 1000;
   el("energy").textContent = fmt(energy, 1);
   el("energy-wh").textContent = fmt(energy / 1000, 6) + " Wh";
   el("participant-label").textContent = session?.participant || "—";
@@ -62,20 +63,25 @@ function render(data) {
   el("timer").classList.toggle("long", (session?.elapsed_s || 0) >= 3600);
   el("timer-note").textContent = running ? (data.fresh ? "쉬는 동안에도 시간은 계속 흐릅니다." : "수신 지연 · 미수신 구간은 제외합니다.") : session ? "결과가 Mac에 저장되었습니다." : "측정값을 수신하면 시작할 수 있어요.";
   const reading = data.fresh ? data.reading : null;
-  el("power").textContent = reading ? fmt(reading.power_w, 3) + " W" : "— W";
+  el("power").textContent = reading ? fmt(reading.power_w * 100, 2) + " W" : "— W";
   el("electrical").textContent = reading ? fmt(reading.voltage_v, 3) + " V / " + fmt(reading.current_a, 3) + " A" : "— V / — A";
   el("coverage").textContent = session ? fmt(session.coverage_pct, 1) + " %" : "— %";
   if (session) {
     el("participant").value = session.participant || "";
     el("target").value = session.target_wh == null ? "" : String(session.target_wh * 1000);
   }
+  if (!session && data.campaign?.selected) {
+    el("participant").value = data.campaign.selected.participant_code;
+    el("target").value = data.campaign.selected.target_wh == null ? "" : String(data.campaign.selected.target_wh * 1000);
+  }
+  renderCampaign(data);
   renderComparison(data);
-  el("session-note").textContent = session ? "유효 계측 " + fmt(session.measured_s, 1) + "초 / 경과 " + fmt(session.elapsed_s, 1) + "초 · " + (demo ? "시뮬레이션 기록" : "USB 전달 전력량") + " · 측정 중 새로고침해도 Mac의 기록은 유지됩니다." : "시작 전에 받은 값은 참가자 전력량에 포함하지 않습니다. 기록은 Mac에 저장됩니다.";
-  el("start").disabled = pending || running || !!session || !data.fresh;
+  el("session-note").textContent = session ? "유효 계측 " + fmt(session.measured_s, 1) + "초 / 경과 " + fmt(session.elapsed_s, 1) + "초 · " + (demo ? "테스트 기록" : "실측×100 환산") + " · 측정 중 새로고침해도 Mac의 기록은 유지됩니다." : "시작 전에 받은 값은 참가자 전력량에 포함하지 않습니다. 기록은 Mac에 저장됩니다.";
+  el("start").disabled = pending || running || !!session || !data.fresh || !!data.campaign?.starting || (data.campaign?.enabled && (!data.campaign.selected || demo));
   el("stop").disabled = pending || !running;
   el("reset").disabled = pending || running || !session;
-  el("participant").disabled = running || !!session;
-  el("target").disabled = running || !!session;
+  el("participant").disabled = running || !!session || !!data.campaign?.enabled;
+  el("target").disabled = running || !!session || !!data.campaign?.enabled;
   for (const [id, mode] of [["real-mode", "ble"], ["usb-mode", "usb"], ["demo-mode", "demo"]]) {
     el(id).disabled = pending || running;
     el(id).classList.toggle("selected", data.mode === mode);
@@ -126,7 +132,31 @@ function render(data) {
       (t.message ? " · " + t.message : "");
   }
   el("device-name").textContent = demo ? "시뮬레이션" : data.device_name || "연결 대기";
-  drawChart(data.trace || [], session?.elapsed_s || 0);
+  drawChart((data.trace || []).map(p => ({...p, w:p.w*100})), session?.elapsed_s || 0);
+}
+
+function renderCampaign(data) {
+  const campaign = data.campaign || {};
+  el("campaign-panel").hidden = !campaign.enabled;
+  if (!campaign.enabled) return;
+  el("campaign-sync").textContent = campaign.error ? "연결 대기" : "목록 연결됨";
+  el("campaign-selection").textContent = campaign.selected ? "선택: " + campaign.selected.participant_code + (campaign.selected.target_wh == null ? " · 토큰 전용 / 목표 Wh 없음" : " · 목표 " + fmt(campaign.selected.target_wh, 4) + " Wh") : "목록에서 참가자 코드를 선택하세요.";
+  el("campaign-notice").textContent = campaign.error || (campaign.pending_ends ? "종료 기록 " + campaign.pending_ends + "건 전송 대기 · Mac에 저장됨" : data.session?.campaign_entry && data.session.status !== "running" ? "계측 종료 기록 전송 완료 · 프린터 연결을 확인하세요." : "계측 종료 시 달성 여부와 관계없이 한 번 출력합니다.");
+  const key = JSON.stringify([campaign.entries, campaign.selected?.id, !!data.session, pending, campaign.starting, el("campaign-search").value]);
+  if (key === queueKey) return;
+  queueKey = key;
+  const list = el("campaign-queue"); list.replaceChildren();
+  const query = el("campaign-search").value.trim().toUpperCase();
+  const entries = (campaign.entries || []).filter(e => e.participant_code.includes(query));
+  if (!entries.length) { list.textContent = "대기 참가자가 없습니다."; return; }
+  for (const entry of entries) {
+    const button = document.createElement("button");
+    button.className = "queue-participant" + (campaign.selected?.id === entry.id ? " selected" : "");
+    button.textContent = entry.participant_code + " · " + (entry.energy_basis === "tokens_only" ? "Gemini / 토큰 전용" : entry.target_wh == null ? "계측 확인 필요" : fmt(entry.target_wh,4)+" Wh") + (entry.state === "measuring" ? " · 측정 중" : "");
+    button.disabled = pending || !!data.session || campaign.starting || entry.energy_basis === "unavailable";
+    button.onclick = () => action("/api/campaign/select", {entry_id:entry.id});
+    list.append(button);
+  }
 }
 
 function renderComparison(data) {
@@ -137,7 +167,9 @@ function renderComparison(data) {
   el("comparison-content").hidden = !valid;
   el("target-empty").hidden = valid;
   if (!valid) {
-    el("comparison-phase").textContent = "기준 미입력";
+    const tokenOnly = (session?.campaign_entry || data.campaign?.selected)?.energy_basis === "tokens_only";
+    el("comparison-phase").textContent = tokenOnly ? "Gemini · 목표 없음" : "기준 미입력";
+    el("target-empty").textContent = tokenOnly ? "Gemini는 토큰만 기록합니다. 측정 종료 버튼을 누르면 환산 발전량을 출력합니다." : "참가자를 선택하면 AI 실측 목표가 자동 입력됩니다.";
     el("comparison-percent").textContent = "—";
     el("comparison-fill").style.width = "0%";
     el("comparison-progress").setAttribute("aria-valuenow", "0");
@@ -145,24 +177,24 @@ function renderComparison(data) {
     el("comparison-progress").removeAttribute("title");
     return;
   }
-  const generated = Math.max(0, session?.energy_mwh || 0);
+  const generated = Math.max(0, session?.campaign_energy_wh != null ? session.campaign_energy_wh * 1000 : session?.energy_mwh || 0);
   const target = targetWh * 1000;
   const ratio = generated / target;
   const percent = ratio * 100;
   const number = (value, digits = 2) => value.toLocaleString("ko-KR", { maximumFractionDigits: digits });
   const bounded = Math.min(100, Math.max(0, percent));
   el("comparison-phase").textContent = !session ? "측정 준비" : session.status === "running" ? "측정 중" : "측정 결과";
-  el("comparison-generated-label").textContent = data.mode === "demo" ? "시뮬레이션 에너지" : "이번 발전량";
+  el("comparison-generated-label").textContent = data.mode === "demo" ? "시뮬레이션 에너지" : "×100 환산 발전량";
   el("comparison-generated").textContent = number(generated);
   el("comparison-target").textContent = number(target);
-  el("comparison-equivalent").textContent = "AI 생성 " + (ratio > 0 && ratio < 0.01 ? "0.01회분 미만" : number(ratio) + "회분") + "에 해당";
+  el("comparison-equivalent").textContent = "실측×100 환산 · 목표 대비 " + number(percent, 1) + "%";
   el("comparison-percent").textContent = number(percent, 1) + "%";
   el("comparison-fill").style.width = bounded + "%";
   el("comparison-progress").setAttribute("aria-valuenow", String(bounded));
-  el("comparison-progress").setAttribute("aria-valuetext", "AI 생성 1회 대비 " + number(percent, 1) + "%");
+  el("comparison-progress").setAttribute("aria-valuetext", "AI 목표 대비 환산 " + number(percent, 1) + "%");
   el("comparison-remaining").textContent = ratio >= 1
-    ? "AI 생성 1회 기준 도달 · " + number(generated - target) + " mWh 초과"
-    : "AI 생성 1회 기준까지 " + number(target - generated) + " mWh 남았어요.";
+    ? "환산 목표 도달 · " + number(generated - target) + " mWh 초과"
+    : "환산 목표까지 " + number(target - generated) + " mWh 남았어요.";
   el("comparison-progress").setAttribute("title", el("comparison-remaining").textContent);
 }
 
@@ -213,7 +245,7 @@ async function loadHistory() {
     const status = document.createElement("small");
     status.textContent = labels[row.status] || row.status;
     mode.append(status);
-    tr.insertCell().textContent = fmt(row.energy_wh * 1000, 1) + " mWh";
+    tr.insertCell().textContent = fmt(row.energy_wh * 100 * 1000, 1) + " mWh";
     tr.insertCell().textContent = fmt(row.elapsed_s ? row.measured_s / row.elapsed_s * 100 : 0, 1) + "%";
     const link = document.createElement("a");
     link.href = "/api/export/" + encodeURIComponent(row.id) + ".csv";
@@ -267,3 +299,5 @@ for (const mode of ["usb", "ble"]) {
   el(prefix + "devices").onchange = () => state && render(state);
 }
 (async function poll() { await refresh(); setTimeout(poll, 250); })();
+
+el("campaign-search").oninput = () => { queueKey=""; if (state) renderCampaign(state); };
