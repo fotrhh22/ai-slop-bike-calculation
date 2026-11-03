@@ -12,6 +12,8 @@
 
 AI 서버의 SQL와 설정을 먼저 적용해야 합니다:
 [전체 적용 안내](https://github.com/fotrhh22/ai-slop-stop/blob/codex/campaign-bike-flow/docs/campaign-bike-rollout.md).
+모델 선택·GPU 준비는 챌린지 서버의 Phase 6–7에서 처리합니다. Bike는 참가자에 고정된 목표를 그대로 수신합니다.
+Phase 8은 전체 현장 검증, Phase 9는 대체 오픈모델 교체·검증입니다.
 별도 터미널에서 새 ai-slop-stop의 printer_bridge worker를 실행해야 PT-210에 출력됩니다.
 이 Bike 서버 자체가 프린터로 중복 전송하지는 않습니다.
 
