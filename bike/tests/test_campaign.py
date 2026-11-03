@@ -61,6 +61,34 @@ class MeasurementTests(unittest.TestCase):
 
 
 class SyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_confirmed_printer_send_automatically_prepares_next_participant(self):
+        store=Store(':memory:');self.addCleanup(store.close);clock=Clock();station=Station(store,clock)
+        station.mode='usb';station.connected=True;station.ingest(Reading(5,.11))
+        entry={'id':str(uuid4()),'participant_code':'PRINT001'}
+        session=station.start('PRINT001',.3463,campaign_entry=entry);station.finish()
+        store.acknowledge(session['id'])
+        from unittest.mock import Mock
+        cloud=Mock();cloud.call.return_value={'session_id':session['id'],'job':{
+            'bike_session_id':session['id'],'status':'SENT','cups_job_id':'PT210-1'}}
+        sync=CampaignSync(store,station,cloud);sync.selected=entry
+        await sync.check_print_completion()
+        self.assertIsNone(station.session);self.assertIsNone(sync.selected)
+        self.assertEqual(sync.last_printed,'PRINT001')
+        self.assertEqual(len(store.history()),1)
+
+    async def test_failed_or_unknown_print_does_not_clear_participant(self):
+        store=Store(':memory:');self.addCleanup(store.close);clock=Clock();station=Station(store,clock)
+        station.mode='usb';station.connected=True;station.ingest(Reading(5,.11))
+        session=station.start('KEEPPRINT',.3463,campaign_entry={'id':str(uuid4())});station.finish()
+        store.acknowledge(session['id'])
+        from unittest.mock import Mock
+        cloud=Mock();sync=CampaignSync(store,station,cloud)
+        for status in ('PENDING','SENDING','FAILED','UNKNOWN'):
+            cloud.call.return_value={'session_id':session['id'],'job':{
+                'bike_session_id':session['id'],'status':status,'cups_job_id':None}}
+            await sync.check_print_completion()
+            self.assertIs(station.session,session)
+
     async def test_delete_removes_cloud_entry_selection_cache_and_start_intent(self):
         store=Store(':memory:');self.addCleanup(store.close);station=Station(store)
         entry={'id':str(uuid4()),'participant_code':'DELETE01','state':'waiting'}

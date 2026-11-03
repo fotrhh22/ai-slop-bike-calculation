@@ -45,13 +45,16 @@ class CampaignSync:
         self.last_sync=None
         self.starting=False
         self.queue_revision=0
+        self.print_status=None
+        self.last_printed=None
         self.lock=asyncio.Lock()
 
     def snapshot(self):
         entries=sorted([e for e in self.store.cached('entries',[]) if not self.store.entry_ended(e['id'])],
             key=lambda e:(e.get('created_at',''),e['id']),reverse=True)
         return {'enabled':self.client is not None,'entries':entries,'selected':self.selected,
-                'error':self.error,'pending_ends':len(self.store.pending()),'last_sync':self.last_sync,'starting':self.starting}
+                'error':self.error,'pending_ends':len(self.store.pending()),'last_sync':self.last_sync,'starting':self.starting,
+                'print_status':self.print_status,'last_printed':self.last_printed}
 
     async def sync_once(self):
         if self.client is None: return
@@ -65,11 +68,29 @@ class CampaignSync:
             result=await asyncio.to_thread(self.client.call,'/entries')
             if revision==self.queue_revision:
                 self.store.cache('entries',result['entries'])
+            await self.check_print_completion()
             from .measurement import utc_now
             self.last_sync=utc_now();self.error=''
         except Exception as exc:
             # Do not expose URLs, headers or credentials in the iPad UI.
             self.error=str(exc) if isinstance(exc,StationError) else '클라우드 연결 대기 · 결과는 Mac에 보관됩니다.'
+
+    async def check_print_completion(self):
+        session=self.station.session
+        if not session or session['status']=='running' or not session.get('campaign_entry'):return
+        if any(sid==session['id'] for sid,_ in self.store.pending()):return
+        result=await asyncio.to_thread(self.client.call,'/bike-sessions/'+session['id']+'/print-status')
+        # A delayed response must never clear a different participant/session.
+        if self.station.session is not session or self.starting:return
+        if result.get('session_id')!=session['id']:raise StationError('출력 상태 확인 대기')
+        job=result.get('job') or {}
+        if job and job.get('bike_session_id')!=session['id']:raise StationError('출력 기록 확인 대기')
+        self.print_status=job.get('status')
+        if self.print_status=='SENT' and job.get('cups_job_id'):
+            self.last_printed=session['participant']
+            self.station.reset()
+            self.selected=None
+
 
     async def run(self):
         while True:
@@ -122,6 +143,7 @@ class CampaignSync:
                 target=entry['target_wh'] if entry['energy_basis']=='measured_gpu' else entry.get('reference_target_wh')
                 if target is None: raise StationError('참가자의 비교 목표를 확인하지 못했습니다.')
                 self.selected=entry
+                self.print_status=None;self.last_printed=None
                 return self.station.start(entry['participant_code'],target,session_id,entry)
             except StationError: raise
             except Exception: raise StationError('시작 연결 확인 실패. 같은 참가자로 다시 시작해 주세요.') from None

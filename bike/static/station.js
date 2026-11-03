@@ -138,7 +138,11 @@ function renderCampaign(data) {
   if (!campaign.enabled) return;
   el("campaign-sync").textContent = campaign.error ? "연결 대기" : "목록 연결됨";
   el("campaign-selection").textContent = campaign.selected ? "선택: " + campaign.selected.participant_code + (campaign.selected.energy_basis === "tokens_only" ? " · Gemini / GPU 실측 평균 고정 비교 기준" : " · 목표 " + fmt(campaign.selected.target_wh, 4) + " Wh") : "목록에서 참가자 코드를 선택하세요.";
-  el("campaign-notice").textContent = campaign.error || (campaign.pending_ends ? "종료 기록 " + campaign.pending_ends + "건 전송 대기 · Mac에 저장됨" : data.session?.campaign_entry && data.session.status !== "running" ? "계측 종료 기록 전송 완료 · 프린터 연결을 확인하세요." : "계측 종료 시 달성 여부와 관계없이 한 번 출력합니다.");
+  el("campaign-notice").textContent = campaign.error || (campaign.pending_ends ? "종료 기록 " + campaign.pending_ends + "건 전송 대기 · Mac에 저장됨"
+    : !data.session && campaign.last_printed ? campaign.last_printed + " 프린터 전송 완료 · 다음 참가자를 선택하세요."
+    : ["FAILED","UNKNOWN"].includes(campaign.print_status) ? "출력 확인이 필요합니다. 기록을 유지합니다."
+    : data.session?.campaign_entry && data.session.status !== "running" ? "출력 전송 확인 중 · 완료되면 다음 참가자 준비로 자동 전환합니다."
+    : "계측 종료 시 달성 여부와 관계없이 한 번 출력합니다.");
   const key = JSON.stringify([campaign.entries, campaign.selected?.id, !!data.session, pending, campaign.starting, el("campaign-search").value]);
   if (key === queueKey) return;
   queueKey = key;
