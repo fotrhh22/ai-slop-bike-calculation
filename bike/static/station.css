@@ -19,9 +19,6 @@
 .connection-note{font-size:12px;line-height:1.7;color:var(--muted);margin:14px 0 0;overflow-wrap:anywhere}
 .device-panel .receive-details>summary{font-size:11px;font-weight:400;color:var(--muted);padding:12px 0 0}
 .receive-details p{margin-top:8px;overflow-wrap:anywhere}
-.comparison-controls{margin-top:18px;border-top:1px solid var(--line)}
-.device-panel .comparison-controls>summary{font-size:12px;font-weight:400;color:var(--muted);padding:16px 0 0}
-.comparison-controls .transport-card{margin-top:14px;background:#f7f8f2}
 @media(max-width:700px){.connection-help{font-size:12px}.transport-card{padding:15px}.device-picker{min-width:0;flex-basis:100%}.connection-actions>.secondary{width:100%}.device-picker button{padding:10px 14px}.transport-heading h3{font-size:13px}}
 
 .timer-value.long{font-size:clamp(28px,5vw,60px)}

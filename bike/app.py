@@ -34,8 +34,6 @@ def create_app(db_path=None, campaign_client=None):
 
         async def heartbeat():
             while True:
-                if station.mode == "demo":
-                    receiver.demo_sample()
                 station.tick()
                 await asyncio.sleep(0.1)
 
@@ -134,7 +132,7 @@ def create_app(db_path=None, campaign_client=None):
         station = app.state.station
         if station.session and station.session["status"] == "running":
             raise StationError("먼저 현재 측정을 종료하세요.")
-        if body.mode not in ("ble", "usb", "demo"):
+        if body.mode not in ("ble", "usb"):
             raise StationError("지원하지 않는 모드입니다.")
         app.state.receiver.set_mode(body.mode)
         return {"ok": True}

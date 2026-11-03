@@ -111,7 +111,7 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
     async def test_lost_completion_response_reuses_same_id_and_survives_reconnect(self):
         store=Store(':memory:');self.addCleanup(store.close);clock=Clock();station=Station(store,clock)
         station.mode='usb';station.connected=True;station.ingest(Reading(5,0.11))
-        entry={'id':str(uuid4()),'participant_code':'GEMINI01','target_wh':None,'energy_basis':'tokens_only'}
+        entry={'id':str(uuid4()),'participant_code':'GEMINI01','target_wh':None,'energy_basis':'tokens_only','reference_target_wh':0.3463}
         class Cloud:
             def __init__(self):self.print_ids=set();self.ends=0
             def call(self,path,body=None):
@@ -122,11 +122,34 @@ class SyncTests(unittest.IsolatedAsyncioTestCase):
                 return {'result':{'id':body['session_id']},'print_queued':True}
         cloud=Cloud();sync=CampaignSync(store,station,cloud)
         await sync.sync_once();await sync.select(entry['id']);await sync.start()
+        self.assertEqual(station.session['target_wh'],0.3463)
         clock.now=.1;station.ingest(Reading(5,.11));clock.now=1.1;station.ingest(Reading(5,.11));station.finish()
         await sync.sync_once();self.assertEqual(len(store.pending()),1)
         await sync.sync_once();self.assertEqual(len(store.pending()),0)
         self.assertEqual(len(cloud.print_ids),1)
         self.assertEqual(sync.snapshot()['entries'],[])
+
+    async def test_gemini_fixed_reference_automatically_stops_at_100_percent(self):
+        store=Store(':memory:');self.addCleanup(store.close);clock=Clock();station=Station(store,clock)
+        station.mode='usb';station.connected=True;station.ingest(Reading(5,.11))
+        entry={'id':str(uuid4()),'participant_code':'FIXED001','energy_basis':'tokens_only',
+            'target_wh':None,'reference_target_wh':0.3463}
+        class Cloud:
+            def call(self,path,body=None):return {'entry':{**entry,'bike_session_id':body['session_id']}}
+        sync=CampaignSync(store,station,Cloud());store.cache('entries',[entry]);await sync.select(entry['id'])
+        await sync.start()
+        for i in range(25):
+            clock.now=.1+i;station.ingest(Reading(5,.11))
+        self.assertEqual(station.session['end_reason'],'target_reached')
+        self.assertGreaterEqual(station.snapshot()['session']['progress_pct'],100)
+        self.assertEqual(len(store.pending()),1)
+
+    async def test_waiting_list_orders_newest_first(self):
+        store=Store(':memory:');self.addCleanup(store.close);station=Station(store)
+        old={'id':'old','created_at':'2026-11-04T00:00:00Z'}
+        new={'id':'new','created_at':'2026-11-04T01:00:00Z'}
+        store.cache('entries',[old,new])
+        self.assertEqual(CampaignSync(store,station).snapshot()['entries'],[new,old])
 
 
 class EnvironmentTests(unittest.TestCase):

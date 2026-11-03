@@ -229,30 +229,37 @@ class ApiTests(unittest.TestCase):
         client.start()
         self.addCleanup(client.stop)
 
-    def test_demo_session_persists_across_clients_and_exports(self):
+    def test_usb_session_persists_and_demo_is_unavailable(self):
         with tempfile.TemporaryDirectory() as folder:
             with TestClient(create_app(Path(folder) / "db.sqlite3")) as client:
                 self.assertEqual(client.get("/").status_code, 200)
                 self.assertEqual(client.post("/api/session/start", json={}).status_code, 409)
-                self.assertEqual(client.post("/api/mode", json={"mode": "demo"}).status_code, 200)
-                import time
-                time.sleep(0.15)
+                self.assertEqual(client.post("/api/mode", json={"mode": "demo"}).status_code, 409)
+                self.assertEqual(client.post("/api/mode", json={"mode": "usb"}).status_code, 200)
+                now=[0.0]
+                def sample(t):
+                    def feed():
+                        now[0]=t;client.app.state.station.clock=lambda:now[0]
+                        sink=client.app.state.receiver.sinks['usb'];sink.connected=True
+                        sink.device_id='test-usb';sink.ingest(Reading(5,.2))
+                    client.portal.call(feed)
+                sample(0)
                 first = client.post("/api/session/start", json={"participant": "=TEST", "target_wh": 0.1})
                 self.assertEqual(first.status_code, 200, first.text)
                 self.assertEqual(client.post("/api/session/start", json={}).status_code, 409)
                 self.assertEqual(client.post("/api/mode", json={"mode": "ble"}).status_code, 409)
-                time.sleep(0.3)
+                sample(.1);sample(1.1)
                 state = client.get("/api/state").json()
                 self.assertGreater(state["session"]["energy_mwh"], 0)
                 self.assertEqual(state["session"]["id"], first.json()["id"])
                 self.assertEqual(client.post("/api/session/stop", json={}).status_code, 200)
                 self.assertEqual(client.post("/api/session/reset", json={}).status_code, 200)
                 rows = client.get("/api/history").json()
-                self.assertEqual(rows[0]["mode"], "demo")
+                self.assertEqual(rows[0]["mode"], "usb")
                 self.assertGreater(rows[0]["energy_wh"], 0)
                 exported = client.get("/api/export/sessions.csv").text
                 self.assertIn("'=TEST", exported)
-                self.assertIn("demo", exported)
+                self.assertIn("usb", exported)
 
     def test_api_manual_stop_after_three_minutes_persists_actual_elapsed(self):
         with TestClient(create_app(":memory:")) as client:

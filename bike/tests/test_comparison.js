@@ -53,9 +53,9 @@ assert.match(element('comparison-progress')['aria-valuetext'], /250%/);
 show({ mode: 'usb', session: { ...session, target_wh: null } });
 assert.equal(element('comparison-content').hidden, true);
 // Small values and synthetic sources remain explicitly described.
-show({ mode: 'demo', session: { ...session, campaign_energy_wh: 0.0001, status: 'completed' } });
+show({ mode: 'usb', session: { ...session, campaign_energy_wh: 0.0001, status: 'completed' } });
 assert.match(element('comparison-equivalent').textContent, /0.2%/);
-assert.equal(element('comparison-generated-label').textContent, '시뮬레이션 에너지');
+assert.equal(element('comparison-generated-label').textContent, '×100 환산 발전량');
 assert.equal(element('comparison-phase').textContent, '측정 결과');
 // Clearing a target empties the battery rather than retaining the old fill.
 element('target').value = '';

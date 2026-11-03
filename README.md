@@ -1,12 +1,16 @@
 # 자전거 발전 측정소
 
+**최신 Gemini 목표:** 이전 RTX 4090 생성+판정 3회 실측 평균인 **346.3 mWh**를 자동 설정합니다.
+Gemini 소비량 추정값이 아닌 고정 비교 기준입니다. 수동 입력·시뮬레이션·비교용 고급 연결 영역은 제거했습니다.
+자세한 SQL/적용 순서는 [고정 목표 안내](https://github.com/fotrhh22/ai-slop-stop/blob/main/docs/gemini-reference-bike-target.md)를 따릅니다.
+
 ## AI PASS 연동 (Phase 0–5)
 
 `codex/campaign-bike-flow`는 Render의 AI PASS 대기 목록과 연결합니다.
 프로젝트 루트 `.env.example`을 `.env.local`로 복사하고 `BIKE_API_BASE`, Render와 같은
 `BIKE_WORKER_TOKEN`(32자 이상)을 설정한 뒤 아래 기존 실행 명령을 사용하세요.
-대기 코드를 선택하면 참가자·목표가 자동 입력됩니다. Gemini는 토큰 전용으로 목표 Wh/달성률이 없으며
-수동 종료로 출력합니다. 오픈모델은 실제 GPU 목표 Wh에 대한 ×100 환산 목표 도달 시 자동 종료합니다.
+대기 코드를 선택하면 참가자·목표가 자동 입력됩니다. Gemini는 GPU 실측 평균 346.3 mWh를 고정 비교 목표로,
+오픈모델은 참가자의 실제 GPU 사용량을 목표로 사용하며 ×100 환산 목표 도달 시 자동 종료합니다.
 미달 수동 종료도 인쇄 대상입니다. 화면에는 원본 발전량 대신 ×100 환산값을 표시합니다.
 연동 모드의 목표/코드는 직접 편집하지 않으며, 공식 참가자는 USB/BLE 실측에서만 시작됩니다.
 

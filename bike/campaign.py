@@ -48,7 +48,8 @@ class CampaignSync:
         self.lock=asyncio.Lock()
 
     def snapshot(self):
-        entries=[e for e in self.store.cached('entries',[]) if not self.store.entry_ended(e['id'])]
+        entries=sorted([e for e in self.store.cached('entries',[]) if not self.store.entry_ended(e['id'])],
+            key=lambda e:(e.get('created_at',''),e['id']),reverse=True)
         return {'enabled':self.client is not None,'entries':entries,'selected':self.selected,
                 'error':self.error,'pending_ends':len(self.store.pending()),'last_sync':self.last_sync,'starting':self.starting}
 
@@ -108,6 +109,8 @@ class CampaignSync:
             if self.station.session: raise StationError('현재 기록을 확인하고 새 참가자를 눌러 주세요.')
             if self.station.mode=='demo': raise StationError('공식 참가자는 USB 또는 Bluetooth 실측으로 시작하세요.')
             if not self.station.fresh(): raise StationError('새 실측값이 수신되는 상태에서 시작하세요.')
+            if self.selected['energy_basis']=='tokens_only' and not self.selected.get('reference_target_wh'):
+                raise StationError('Gemini 고정 비교 목표가 없습니다. SQL·서버 업데이트 후 목록을 다시 확인하세요.')
             entry_id=self.selected['id']
             session_id=self.store.intent(entry_id)  # retained if the HTTP response is lost
             self.starting=True
@@ -116,7 +119,8 @@ class CampaignSync:
                 entry=response['entry']
                 if entry['id']!=entry_id or entry['bike_session_id']!=session_id or entry['energy_basis']=='unavailable':
                     raise StationError('참가자 기록 확인 실패')
-                target=entry['target_wh'] if entry['energy_basis']=='measured_gpu' else None
+                target=entry['target_wh'] if entry['energy_basis']=='measured_gpu' else entry.get('reference_target_wh')
+                if target is None: raise StationError('참가자의 비교 목표를 확인하지 못했습니다.')
                 self.selected=entry
                 return self.station.start(entry['participant_code'],target,session_id,entry)
             except StationError: raise

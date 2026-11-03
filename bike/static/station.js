@@ -48,12 +48,10 @@ function render(data) {
   state = data;
   const session = data.session;
   const running = session?.status === "running";
-  const demo = data.mode === "demo";
-  el("demo-banner").hidden = !demo;
-  el("mode-label").textContent = demo ? "SIMULATION" : data.mode === "usb" ? "USB 실측" : "BLE 실측";
+  el("mode-label").textContent = data.mode === "usb" ? "USB 실측" : "BLE 실측";
   el("connection").className = "badge " + (data.fresh ? "live" : data.connected ? "warn" : "");
   el("connection").replaceChildren(Object.assign(document.createElement("i"), {}),
-    document.createTextNode(data.fresh ? (demo ? "테스트 수신 중" : "실측 수신 중") : data.connected ? "데이터 대기 / 지연" : "연결 대기"));
+    document.createTextNode(data.fresh ? "실측 수신 중" : data.connected ? "데이터 대기 / 지연" : "연결 대기"));
   el("session-status").textContent = session ? labels[session.status] || session.status : "참가자 준비";
   const energy = (session?.campaign_energy_wh || 0) * 1000;
   el("energy").textContent = fmt(energy, 1);
@@ -70,40 +68,36 @@ function render(data) {
     el("participant").value = session.participant || "";
     el("target").value = session.target_wh == null ? "" : String(session.target_wh * 1000);
   }
-  if (!session && data.campaign?.selected) {
-    el("participant").value = data.campaign.selected.participant_code;
-    el("target").value = data.campaign.selected.target_wh == null ? "" : String(data.campaign.selected.target_wh * 1000);
+  const selected = data.campaign?.selected;
+  if (!session && selected) {
+    el("participant").value = selected.participant_code;
+    const value = selected.target_wh ?? selected.reference_target_wh;
+    el("target").value = value == null ? "" : String(value * 1000);
   } else if (!session && data.campaign?.enabled) {
     el("participant").value = "";
     el("target").value = "";
   }
   renderCampaign(data);
   renderComparison(data);
-  el("session-note").textContent = session ? "유효 계측 " + fmt(session.measured_s, 1) + "초 / 경과 " + fmt(session.elapsed_s, 1) + "초 · " + (demo ? "테스트 기록" : "실측×100 환산") + " · 측정 중 새로고침해도 Mac의 기록은 유지됩니다." : "시작 전에 받은 값은 참가자 전력량에 포함하지 않습니다. 기록은 Mac에 저장됩니다.";
-  el("start").disabled = pending || running || !!session || !data.fresh || !!data.campaign?.starting || (data.campaign?.enabled && (!data.campaign.selected || demo));
+  el("session-note").textContent = session ? "유효 계측 " + fmt(session.measured_s, 1) + "초 / 경과 " + fmt(session.elapsed_s, 1) + "초 · 실측×100 환산 · 측정 중 새로고침해도 Mac의 기록은 유지됩니다." : "시작 전에 받은 값은 참가자 전력량에 포함하지 않습니다. 기록은 Mac에 저장됩니다.";
+  el("start").disabled = pending || running || !!session || !data.fresh || !!data.campaign?.starting || (data.campaign?.enabled && (!selected || (selected.target_wh ?? selected.reference_target_wh) == null));
   el("stop").disabled = pending || !running;
   el("reset").disabled = pending || running || !session;
   el("participant").disabled = running || !!session || !!data.campaign?.enabled;
-  el("target").disabled = running || !!session || !!data.campaign?.enabled;
-  for (const [id, mode] of [["real-mode", "ble"], ["usb-mode", "usb"], ["demo-mode", "demo"]]) {
+  el("target").readOnly = true;
+  el("target").disabled = pending || running || !!session;
+  el("target-help").textContent = selected?.energy_basis === "tokens_only"
+    ? "RTX 4090 생성+판정 3회 실측 평균 346.3 mWh를 고정 비교 기준으로 사용합니다. Gemini 소비량 측정·추정값이 아닙니다."
+    : selected ? "해당 참가자의 GPU 실측 사용량에서 자동 설정된 목표입니다." : "참가자를 선택하면 비교 목표가 자동으로 표시됩니다.";
+  for (const [id, mode] of [["real-mode", "ble"], ["usb-mode", "usb"]]) {
     el(id).disabled = pending || running;
     el(id).classList.toggle("selected", data.mode === mode);
     el(id).setAttribute("aria-pressed", String(data.mode === mode));
   }
-  el("transport-controls").hidden = demo;
-  el("mode-help").textContent = demo
-    ? "장비 없이 화면과 누적 계산을 확인하는 테스트입니다. 실제 발전량은 아닙니다."
-    : data.mode === "usb"
+  el("mode-help").textContent = data.mode === "usb"
       ? "Mac과 FNB58의 PC 포트를 데이터 케이블로 연결한 뒤 기기를 찾아주세요."
       : "FNB58에 전원을 공급한 뒤 기기를 찾아주세요. Bluetooth 연결은 Mac에서 진행합니다.";
-  if (!demo) {
-    for (const mode of ["usb", "ble"]) {
-      const card = el(mode + "-card");
-      const parent = el(data.mode === mode ? "primary-transport" : "secondary-transport");
-      // Move only on a mode change, not every poll: retain selection and focus.
-      if (card.parentElement !== parent) parent.append(card);
-    }
-  }
+  for (const mode of ["usb", "ble"]) el(mode + "-card").hidden = data.mode !== mode;
   for (const mode of ["usb", "ble"]) {
     const t = data.transports?.[mode] || {};
     const prefix = mode === "usb" ? "usb-" : "";
@@ -134,7 +128,7 @@ function render(data) {
       " · 형식 오류 " + (t.bad_frames || 0) + (t.sample_age_s == null ? "" : " · 마지막 수신 " + fmt(t.sample_age_s, 1) + "초 전") +
       (t.message ? " · " + t.message : "");
   }
-  el("device-name").textContent = demo ? "시뮬레이션" : data.device_name || "연결 대기";
+  el("device-name").textContent = data.device_name || "연결 대기";
   drawChart((data.trace || []).map(p => ({...p, w:p.w*100})), session?.elapsed_s || 0);
 }
 
@@ -143,14 +137,15 @@ function renderCampaign(data) {
   el("campaign-panel").hidden = !campaign.enabled;
   if (!campaign.enabled) return;
   el("campaign-sync").textContent = campaign.error ? "연결 대기" : "목록 연결됨";
-  el("campaign-selection").textContent = campaign.selected ? "선택: " + campaign.selected.participant_code + (campaign.selected.target_wh == null ? " · 토큰 전용 / 목표 Wh 없음" : " · 목표 " + fmt(campaign.selected.target_wh, 4) + " Wh") : "목록에서 참가자 코드를 선택하세요.";
+  el("campaign-selection").textContent = campaign.selected ? "선택: " + campaign.selected.participant_code + (campaign.selected.energy_basis === "tokens_only" ? " · Gemini / GPU 실측 평균 고정 비교 기준" : " · 목표 " + fmt(campaign.selected.target_wh, 4) + " Wh") : "목록에서 참가자 코드를 선택하세요.";
   el("campaign-notice").textContent = campaign.error || (campaign.pending_ends ? "종료 기록 " + campaign.pending_ends + "건 전송 대기 · Mac에 저장됨" : data.session?.campaign_entry && data.session.status !== "running" ? "계측 종료 기록 전송 완료 · 프린터 연결을 확인하세요." : "계측 종료 시 달성 여부와 관계없이 한 번 출력합니다.");
   const key = JSON.stringify([campaign.entries, campaign.selected?.id, !!data.session, pending, campaign.starting, el("campaign-search").value]);
   if (key === queueKey) return;
   queueKey = key;
   const list = el("campaign-queue"); list.replaceChildren();
   const query = el("campaign-search").value.trim().toUpperCase();
-  const entries = (campaign.entries || []).filter(e => e.participant_code.includes(query));
+  const entries = (campaign.entries || []).filter(e => e.participant_code.includes(query))
+    .sort((a,b) => (b.created_at || "").localeCompare(a.created_at || "") || b.id.localeCompare(a.id));
   if (!entries.length) { list.textContent = "대기 참가자가 없습니다."; return; }
   for (const entry of entries) {
     const row = document.createElement("div");
@@ -186,7 +181,7 @@ function renderComparison(data) {
   if (!valid) {
     const tokenOnly = (session?.campaign_entry || data.campaign?.selected)?.energy_basis === "tokens_only";
     el("comparison-phase").textContent = tokenOnly ? "Gemini · 목표 없음" : "기준 미입력";
-    el("target-empty").textContent = tokenOnly ? "Gemini는 토큰만 기록합니다. 측정 종료 버튼을 누르면 환산 발전량을 출력합니다." : "참가자를 선택하면 AI 실측 목표가 자동 입력됩니다.";
+    el("target-empty").textContent = tokenOnly ? "Gemini 고정 비교 목표를 확인할 수 없습니다. SQL·서버 업데이트를 확인하세요." : "참가자를 선택하면 비교 목표가 자동 표시됩니다.";
     el("comparison-percent").textContent = "—";
     el("comparison-fill").style.width = "0%";
     el("comparison-progress").setAttribute("aria-valuenow", "0");
@@ -201,7 +196,7 @@ function renderComparison(data) {
   const number = (value, digits = 2) => value.toLocaleString("ko-KR", { maximumFractionDigits: digits });
   const bounded = Math.min(100, Math.max(0, percent));
   el("comparison-phase").textContent = !session ? "측정 준비" : session.status === "running" ? "측정 중" : "측정 결과";
-  el("comparison-generated-label").textContent = data.mode === "demo" ? "시뮬레이션 에너지" : "×100 환산 발전량";
+  el("comparison-generated-label").textContent = "×100 환산 발전량";
   el("comparison-generated").textContent = number(generated);
   el("comparison-target").textContent = number(target);
   el("comparison-equivalent").textContent = "실측×100 환산 · 목표 대비 " + number(percent, 1) + "%";
@@ -299,7 +294,6 @@ el("reset").onclick = async () => {
   if (await action("/api/session/reset")) { el("participant").value = ""; el("target").value = ""; }
 };
 el("real-mode").onclick = () => action("/api/mode", { mode: "ble" });
-el("demo-mode").onclick = () => action("/api/mode", { mode: "demo" });
 el("usb-mode").onclick = () => action("/api/mode", { mode: "usb" });
 for (const mode of ["usb", "ble"]) {
   const prefix = mode === "usb" ? "usb-" : "";
