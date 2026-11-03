@@ -4,4 +4,55 @@
 @media(max-width:700px){.shell{padding:0 18px}.topbar{height:70px}.brand{font-size:11px}.brand span{display:none}.intro{padding:30px 0 22px;align-items:flex-start}h1{font-size:27px}.subtext{font-size:12px}.eyebrow{font-size:8px}.status-label{font-size:10px;padding:7px 10px}.dashboard{gap:10px;grid-template-columns:1.15fr 1fr}.energy-card,.timer-card{padding:18px 16px;min-height:210px}.card-label{font-size:10px}.card-label>span:last-child{font-size:8px}.energy-value{gap:7px;margin-top:24px}.energy-value>span:first-child{font-size:54px}.unit{font-size:14px}.energy-conversion{font-size:10px;margin-bottom:20px}.energy-footer{font-size:8px;display:block;line-height:1.6}.energy-footer>span:last-child{display:none}.timer-value{font-size:49px;margin:27px 0 25px}.timer-card p{font-size:10px}.readings{padding:18px 0;grid-template-columns:1fr 1.3fr 1fr}.readings article{padding:0 12px}.small-label{font-size:9px}.readings strong{font-size:23px}.readings strong.compact{font-size:14px}.readings small{font-size:10px}.chart-card{padding:18px 16px}.chart-note{font-size:10px}.fields{grid-template-columns:1fr;gap:17px}.control-card{padding:18px}.actions{gap:7px;flex-wrap:wrap}.actions .primary{flex-basis:100%}.actions .secondary{flex:1;font-size:12px}.device-panel summary{padding:17px 16px}.device-panel summary span{display:block;margin:8px 0 0 16px}.device-body{padding:0 16px 18px}.ble-controls{flex-wrap:wrap}.ble-controls select{flex-basis:65%}.ble-controls .text-button{padding-left:0}footer{flex-direction:column;font-size:9px}.footnote{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.track div{transition:none}}
 
-.transport-card{border-top:1px solid var(--line);margin-top:18px;padding-top:8px}.transport-card h3{font-size:13px;margin:10px 0}.transport-card h3 span{font-size:11px;font-weight:400;color:var(--muted)}.mode-switch{flex-wrap:wrap}
+.mode-switch{display:flex;width:100%;gap:4px}
+.mode-switch button{flex:1;min-width:0;padding:12px 10px}
+.connection-help{font-size:13px;color:var(--muted);line-height:1.7;margin:16px 0 20px}
+.transport-card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px}
+.transport-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.transport-heading h3{font-size:14px;margin:0;font-weight:600}
+.transport-status{font-size:11px;color:var(--muted);white-space:nowrap}
+.transport-status.live{color:#287847}
+.connection-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}
+.device-picker{display:flex;gap:10px;flex:1;min-width:220px}
+.device-picker select{flex:1;min-width:0}
+.device-picker button{white-space:nowrap}
+.connection-note{font-size:12px;line-height:1.7;color:var(--muted);margin:14px 0 0;overflow-wrap:anywhere}
+.device-panel .receive-details>summary{font-size:11px;font-weight:400;color:var(--muted);padding:12px 0 0}
+.receive-details p{margin-top:8px;overflow-wrap:anywhere}
+.comparison-controls{margin-top:18px;border-top:1px solid var(--line)}
+.device-panel .comparison-controls>summary{font-size:12px;font-weight:400;color:var(--muted);padding:16px 0 0}
+.comparison-controls .transport-card{margin-top:14px;background:#f7f8f2}
+@media(max-width:700px){.connection-help{font-size:12px}.transport-card{padding:15px}.device-picker{min-width:0;flex-basis:100%}.connection-actions>.secondary{width:100%}.device-picker button{padding:10px 14px}.transport-heading h3{font-size:13px}}
+
+.timer-value.long{font-size:clamp(28px,5vw,60px)}
+
+.field-help{display:block;font-size:11px;font-weight:400;color:var(--muted);line-height:1.6;margin-top:8px}
+.dashboard-side{display:grid;grid-template-rows:repeat(2,minmax(0,1fr));gap:12px;min-width:0;min-height:260px}
+.dashboard-side>article{min-height:0;min-width:0;border-radius:12px;padding:14px 20px}
+.dashboard .timer-value{font-size:44px;line-height:1.1;margin:7px 0 0;letter-spacing:-.045em}
+.dashboard .timer-value.long{font-size:30px}
+.dashboard .timer-card p{font-size:10px;line-height:1.5;margin:5px 0 0;color:var(--muted)}
+.battery-card{background:#eef3e9;border:1px solid #d5dfcd;display:flex;flex-direction:column;justify-content:center}
+.battery-row{display:flex;align-items:center;gap:18px;margin-top:10px;min-width:0}
+.battery-shape{position:relative;flex:1;min-width:0;padding-right:8px}
+.battery-shape::after{content:"";position:absolute;right:0;top:50%;transform:translateY(-50%);width:6px;height:14px;border-radius:0 3px 3px 0;background:var(--green)}
+.battery-shell{height:32px;border:2px solid var(--green);border-radius:5px;padding:3px;background:#e1e9da;overflow:hidden}
+.battery-fill{height:100%;width:0;background:var(--green);border-radius:1px;transition:width .25s linear}
+.battery-percent{font-size:25px;line-height:1;letter-spacing:-.04em;font-weight:600;color:var(--green);white-space:nowrap}
+.battery-values{font-size:11px;font-variant-numeric:tabular-nums;color:var(--green);line-height:1.4;margin:7px 0 0;overflow-wrap:anywhere}
+.battery-note{font-size:10px;color:var(--muted);line-height:1.4;margin:3px 0 0;overflow-wrap:anywhere}
+#target-empty{margin-top:9px}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:700px){.dashboard-side{gap:10px}.dashboard-side>article{padding:12px}.dashboard .timer-value{font-size:36px;margin-top:9px}.dashboard .timer-value.long{font-size:24px}.dashboard .timer-card p{font-size:9px}.battery-row{gap:8px;margin-top:9px}.battery-percent{font-size:20px}.battery-shell{height:27px;padding:2px}.battery-shape{padding-right:6px}.battery-shape::after{width:5px;height:11px}.battery-values{font-size:10px}.battery-note{font-size:9px}}
+@media(prefers-reduced-motion:reduce){.battery-fill{transition:none}}
+
+@media(max-width:700px){
+  #power{font-size:clamp(14px,4vw,20px);white-space:nowrap;line-height:1.25}
+}
+
+@media(max-width:700px){
+  .intro{flex-wrap:wrap}
+  .intro>div{min-width:0;flex:1 1 240px}
+  .intro .subtext{word-break:keep-all;overflow-wrap:break-word;text-wrap:pretty}
+  .intro .subtext>span:first-child{display:block}
+}

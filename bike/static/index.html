@@ -22,7 +22,7 @@
     <main>
       <section class="intro">
         <div><p class="eyebrow">PEDAL / MEASURE / UNDERSTAND</p><h1>내 힘으로 만든 전기</h1>
-        <p class="subtext">3분 동안 페달을 밟고, 실제로 전달한 전력량을 확인하세요.</p></div>
+        <p class="subtext"><span>시작부터 종료까지,</span> <span>페달을 밟아 전달한 전력량을 확인하세요.</span></p></div>
         <span id="session-status" class="status-label">참가자 준비</span>
       </section>
 
@@ -34,12 +34,30 @@
           <div class="energy-footer"><span>USB 출력에서 부하로 전달한 에너지</span><span id="participant-label">—</span></div>
         </article>
 
-        <article class="timer-card">
-          <div class="card-label"><span>남은 시간</span><span>03:00 SESSION</span></div>
-          <div id="timer" class="timer-value">03:00</div>
-          <div class="track"><div id="time-progress"></div></div>
-          <p id="timer-note">측정값이 수신되면 시작할 수 있습니다.</p>
-        </article>
+        <div class="dashboard-side">
+          <article class="timer-card">
+            <div class="card-label"><span>경과 시간</span><span>START → STOP</span></div>
+            <div id="timer" class="timer-value">00:00</div>
+            <p id="timer-note">측정값을 수신하면 시작할 수 있어요.</p>
+          </article>
+          <article id="target-result" class="battery-card" aria-label="AI 소비 에너지 대비 발전량">
+            <div class="card-label"><span>AI 소비량과 비교</span><span id="comparison-phase">기준 미입력</span></div>
+            <div class="battery-row">
+              <div class="battery-shape">
+                <div id="comparison-progress" class="battery-shell" role="progressbar" aria-label="AI 생성 1회 소비 에너지 대비 발전량" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div id="comparison-fill" class="battery-fill"></div>
+                </div>
+              </div>
+              <strong id="comparison-percent" class="battery-percent">—</strong>
+            </div>
+            <p id="target-empty" class="battery-note">아래에서 AI 소비 에너지를 입력하세요.</p>
+            <div id="comparison-content" hidden>
+              <p class="battery-values"><span id="comparison-generated-label" class="visually-hidden">이번 발전량</span><span id="comparison-generated">0</span> / <span id="comparison-target">0</span> mWh</p>
+              <p id="comparison-equivalent" class="battery-note">AI 생성 0회분에 해당</p>
+              <span id="comparison-remaining" class="visually-hidden"></span>
+            </div>
+          </article>
+        </div>
       </section>
 
       <section class="readings" aria-label="현재 전력과 측정 상태">
@@ -49,7 +67,7 @@
       </section>
 
       <section class="chart-card">
-        <div class="card-label"><span>이번 측정의 전력 변화</span><span>0 — 180초 · W</span></div>
+        <div class="card-label"><span>최근 전력 변화</span><span id="chart-range">00:00 — 00:01 · W</span></div>
         <svg id="chart" viewBox="0 0 900 110" preserveAspectRatio="none" role="img" aria-label="전력 변화 그래프">
           <path class="grid" d="M0 25H900 M0 65H900 M0 105H900"></path>
           <path id="chart-line" d=""></path>
@@ -60,11 +78,10 @@
       <section class="control-card" aria-label="참가자 조작">
         <div class="fields">
           <label>참가자 이름 또는 번호<input id="participant" maxlength="80" placeholder="예: 참가자 001" autocomplete="off"></label>
-          <label>비교할 AI 소비량 <span>(선택)</span><div class="input-unit"><input id="target" type="number" min="0.000001" step="any" inputmode="decimal" placeholder="목표량 입력"><span>Wh</span></div></label>
+          <label>AI 생성 1회 소비 에너지 <span>(선택)</span><div class="input-unit"><input id="target" type="number" min="0.001" step="any" inputmode="decimal" placeholder="예: 50" aria-describedby="target-help"><span>mWh</span></div><small id="target-help" class="field-help">평균 전력(W)이 아닌, 생성 시작~종료 구간의 에너지(mWh)를 입력하세요.</small></label>
         </div>
-        <p id="target-result" class="target-result" hidden></p>
         <div class="actions">
-          <button id="start" class="primary" disabled>3분 측정 시작 <span>↗</span></button>
+          <button id="start" class="primary" disabled>측정 시작 <span>↗</span></button>
           <button id="stop" class="secondary" disabled>측정 종료</button>
           <button id="reset" class="secondary" disabled>새 참가자</button>
         </div>
@@ -72,39 +89,50 @@
       </section>
 
       <details id="device-panel" class="device-panel" open>
-        <summary>측정 기기 연결 <span id="device-name">선택된 기기 없음</span></summary>
+        <summary>측정 기기 연결 <span id="device-name">연결 대기</span></summary>
         <div class="device-body">
-          <div class="mode-switch" role="group" aria-label="데이터 모드">
-            <button id="usb-mode">실측 · USB 유선</button>
-            <button id="real-mode" class="selected">실측 · BLE</button>
-            <button id="demo-mode">시뮬레이션</button>
+          <div class="mode-switch" role="group" aria-label="연결 방식">
+            <button id="usb-mode" aria-pressed="false">USB 유선</button>
+            <button id="real-mode" class="selected" aria-pressed="true">Bluetooth</button>
+            <button id="demo-mode" aria-pressed="false">시뮬레이션</button>
           </div>
-          <p class="footnote">위에서 선택한 수신 방식 하나만 참가자 전력량에 누적합니다. USB·BLE를 모두 연결하면 아래에서 수신 상태를 비교할 수 있습니다.</p>
+          <p id="mode-help" class="connection-help">FNB58에 전원을 공급한 뒤 기기를 찾아 연결하세요.</p>
           <div id="transport-controls">
-            <section class="transport-card">
-              <h3>USB 유선 <span id="usb-selected"></span></h3>
-              <div class="ble-controls">
-                <button id="usb-scan" class="secondary">USB 검색</button>
-                <select id="usb-devices" aria-label="검색된 USB FNB58"><option value="">먼저 USB를 검색하세요</option></select>
-                <button id="usb-connect" class="secondary">연결</button>
-                <button id="usb-disconnect" class="text-button">연결 해제</button>
+            <div id="primary-transport">
+            <section id="ble-card" class="transport-card" aria-label="Bluetooth 연결 설정">
+              <div class="transport-heading"><h3>Bluetooth 연결</h3><span id="ble-status" class="transport-status">연결 대기</span></div>
+              <div class="connection-actions">
+                <button id="scan" class="secondary">기기 찾기</button>
+                <div id="ble-picker" class="device-picker" hidden>
+                  <select id="devices" aria-label="검색된 Bluetooth FNB58"><option value="">기기를 선택하세요</option></select>
+                  <button id="connect" class="secondary">연결하기</button>
+                </div>
+                <button id="disconnect" class="text-button" hidden>연결 해제</button>
               </div>
-              <p id="usb-diagnostic" class="footnote" aria-live="polite">USB 연결 대기</p>
+              <p id="ble-diagnostic" class="connection-note">기기 찾기를 눌러주세요.</p>
+              <details class="receive-details"><summary>수신 상세</summary><p id="ble-stats" class="footnote"></p></details>
             </section>
-            <section class="transport-card">
-              <h3>BLE 무선 <span id="ble-selected"></span></h3>
-              <div class="ble-controls">
-                <button id="scan" class="secondary">BLE 검색</button>
-                <select id="devices" aria-label="검색된 BLE FNB58"><option value="">먼저 BLE를 검색하세요</option></select>
-                <button id="connect" class="secondary">연결</button>
-                <button id="disconnect" class="text-button">연결 해제</button>
+            </div>
+            <details id="comparison-controls" class="comparison-controls">
+              <summary>고급 설정 · 다른 연결 방식도 테스트</summary>
+              <p class="footnote">아래 연결은 비교용입니다. 전력량은 위에서 선택한 방식으로만 누적합니다.</p>
+              <div id="secondary-transport">
+            <section id="usb-card" class="transport-card" aria-label="USB 연결 설정">
+              <div class="transport-heading"><h3>USB 케이블 연결</h3><span id="usb-status" class="transport-status">연결 대기</span></div>
+              <div class="connection-actions">
+                <button id="usb-scan" class="secondary">기기 찾기</button>
+                <div id="usb-picker" class="device-picker" hidden>
+                  <select id="usb-devices" aria-label="검색된 USB FNB58"><option value="">기기를 선택하세요</option></select>
+                  <button id="usb-connect" class="secondary">연결하기</button>
+                </div>
+                <button id="usb-disconnect" class="text-button" hidden>연결 해제</button>
               </div>
-              <p id="ble-diagnostic" class="footnote" aria-live="polite">BLE 연결 대기</p>
+              <p id="usb-diagnostic" class="connection-note">기기 찾기를 눌러주세요.</p>
+              <details class="receive-details"><summary>수신 상세</summary><p id="usb-stats" class="footnote"></p></details>
             </section>
+              </div>
+            </details>
           </div>
-          <p id="device-message" class="footnote">FNB58을 검색하고 연결하세요.</p>
-          <p class="footnote">USB: Mac ↔ 데이터 지원 마이크로 5핀 케이블 ↔ FNB58 전용 PC 포트. 두 통신의 동시 전송 지원은 실물 확인이 필요합니다. 수신 방식 변경은 측정 종료 후 가능합니다.</p>
-          <p class="footnote">USB·BLE 수신은 Mac에서 수행합니다. iPad는 같은 Wi-Fi에서 이 화면을 엽니다.</p>
         </div>
       </details>
 

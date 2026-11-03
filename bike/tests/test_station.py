@@ -71,7 +71,9 @@ class StationTests(unittest.TestCase):
             self.now += 1
             self.sample()
         session = self.station.snapshot()["session"]
-        self.assertEqual(session["status"], "completed")
+        self.assertEqual(session["status"], "running")
+        self.station.finish()
+        self.assertEqual(self.station.session["status"], "completed")
         self.assertAlmostEqual(session["energy_wh"], 0.05)
         self.assertAlmostEqual(session["energy_mwh"], 50)
         self.assertAlmostEqual(session["measured_s"], 180)
@@ -123,17 +125,61 @@ class StationTests(unittest.TestCase):
             with self.assertRaises(StationError):
                 call()
 
-    def test_deadline_clips_incoming_interval(self):
+    def test_continues_beyond_three_minutes_until_manual_finish(self):
         self.begin()
-        self.now += 179
-        self.sample()  # gap is deliberately not estimated
-        self.now += 2
-        self.sample()
-        self.assertAlmostEqual(self.station.session["energy_wh"], 1 / 3600)
-        self.assertEqual(self.station.session["elapsed_s"], 180)
+        for _ in range(300):
+            self.now += 1
+            self.sample()
+        session = self.station.snapshot()["session"]
+        self.assertEqual(session["status"], "running")
+        self.assertEqual(session["duration_s"], 0)
+        self.assertEqual(session["elapsed_s"], 300)
+        self.assertAlmostEqual(session["energy_wh"], 300 / 3600)
+        self.station.finish()
+        final = self.station.snapshot()["session"]
+        sample_count = len(self.store.samples(final["id"]))
+        self.now += 20
+        self.sample(current=0.4)
+        self.station.tick()
+        self.assertEqual(self.station.snapshot()["session"], final)
+        self.assertEqual(len(self.store.samples(final["id"])), sample_count)
+        saved = self.store.history()[0]
+        self.assertEqual(saved["status"], "completed")
+        self.assertEqual(saved["elapsed_s"], 300)
+        self.assertAlmostEqual(saved["energy_wh"], 300 / 3600)
+
+    def test_zero_power_rest_keeps_time_and_resumes_without_reset(self):
+        self.begin()
         self.now += 1
         self.sample()
-        self.assertAlmostEqual(self.station.session["energy_wh"], 1 / 3600)
+        before_rest = self.station.session["energy_wh"]
+        self.sample(current=0)  # same timestamp: no extra energy
+        for _ in range(240):
+            self.now += 1
+            self.sample(current=0)
+        session = self.station.snapshot()["session"]
+        self.assertEqual(session["status"], "running")
+        self.assertEqual(session["elapsed_s"], 241)
+        self.assertAlmostEqual(session["energy_wh"], before_rest)
+        self.sample()
+        self.now += 1
+        self.sample()
+        self.assertAlmostEqual(self.station.session["energy_wh"], before_rest + 1 / 3600)
+        self.assertEqual(self.station.session["elapsed_s"], 242)
+
+    def test_disconnection_does_not_auto_finish_or_estimate_rest_energy(self):
+        self.begin()
+        self.now += 1
+        self.sample()
+        energy = self.station.session["energy_wh"]
+        self.station.clear_connection()
+        self.now += 600
+        self.station.tick()
+        self.assertEqual(self.station.session["status"], "running")
+        self.assertEqual(self.station.session["elapsed_s"], 601)
+        self.assertEqual(self.station.session["energy_wh"], energy)
+        self.station.finish()
+        self.assertEqual(self.station.session["status"], "completed")
 
     def test_restart_recovers_unfinished_session_as_interrupted(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -200,6 +246,41 @@ class ApiTests(unittest.TestCase):
                 exported = client.get("/api/export/sessions.csv").text
                 self.assertIn("'=TEST", exported)
                 self.assertIn("demo", exported)
+
+    def test_api_manual_stop_after_three_minutes_persists_actual_elapsed(self):
+        with TestClient(create_app(":memory:")) as client:
+            async def prepare():
+                station = client.app.state.station
+                station.clock = lambda: 100.0
+                sink = client.app.state.receiver.sinks["ble"]
+                sink.connected = True
+                sink.device_id = "test-meter"
+                sink.ingest(Reading(5, 0.2))
+            client.portal.call(prepare)
+            result = client.post("/api/session/start", json={"participant": "long-session"})
+            self.assertEqual(result.status_code, 200)
+            async def advance():
+                station = client.app.state.station
+                sink = client.app.state.receiver.sinks["ble"]
+                sink.ingest(Reading(5, 0.2))
+                for second in range(1, 301):
+                    station.clock = lambda second=second: 100.0 + second
+                    sink.ingest(Reading(5, 0.2))
+            client.portal.call(advance)
+            state = client.get("/api/state").json()["session"]
+            self.assertEqual(state["status"], "running")
+            self.assertEqual(state["elapsed_s"], 300)
+            self.assertEqual(client.post("/api/session/stop", json={}).status_code, 200)
+            final = client.get("/api/state").json()["session"]
+            self.assertEqual(final["status"], "completed")
+            self.assertAlmostEqual(final["energy_wh"], 300 / 3600)
+            rows = client.get("/api/history").json()
+            self.assertEqual(rows[0]["elapsed_s"], 300)
+            self.assertEqual(rows[0]["duration_s"], 0)
+            self.assertIn("completed", client.get("/api/export/sessions.csv").text)
+            self.assertEqual(client.post("/api/session/reset", json={}).status_code, 200)
+            self.assertIsNone(client.get("/api/state").json()["session"])
+            self.assertEqual(len(client.get("/api/history").json()), 1)
 
     def test_cross_site_commands_are_rejected(self):
         with TestClient(create_app(":memory:")) as client:

@@ -130,7 +130,9 @@ class Station:
         self.session = {
             "id": str(uuid.uuid4()), "participant": participant.strip()[:80] or "이름 미입력",
             "mode": self.mode, "status": "running", "started_at": utc_now(),
-            "ended_at": None, "duration_s": 180.0, "elapsed_s": 0.0,
+            # 0 means no automatic duration limit; retain the existing DB/CSV
+            # column so historical timed sessions remain readable unchanged.
+            "ended_at": None, "duration_s": 0.0, "elapsed_s": 0.0,
             "energy_wh": 0.0, "measured_s": 0.0, "peak_w": 0.0,
             "target_wh": target_wh, "device_id": self.device_id, "gap_count": 0,
             "note": "연속 수신 구간의 V×A를 적분. 미수신 구간은 추정하지 않음.",
@@ -153,44 +155,33 @@ class Station:
         session = self.session
         if not session or session["status"] != "running":
             return True
-        elapsed = min(max(0, now - self.started), session["duration_s"])
+        elapsed = max(0, now - self.started)
         if self.previous:
             before, old_power = self.previous
             dt = now - before
             if 0 < dt <= self.MAX_INTERVAL_S:
-                left = max(before, self.started)
-                right = min(now, self.started + session["duration_s"])
-                if right > left:
-                    # Clip the trapezoid at the session deadline.
-                    slope = (reading.power_w - old_power) / dt
-                    p_left = old_power + slope * (left - before)
-                    p_right = old_power + slope * (right - before)
-                    session["energy_wh"] += (p_left + p_right) * 0.5 * (right - left) / 3600
-                    session["measured_s"] += right - left
+                session["energy_wh"] += (old_power + reading.power_w) * 0.5 * dt / 3600
+                session["measured_s"] += dt
             elif dt > self.MAX_INTERVAL_S:
                 session["gap_count"] += 1
         self.previous = (now, reading.power_w)
         session["elapsed_s"] = elapsed
-        # Do not count readings strictly after the deadline as the session peak.
-        if now <= self.started + session["duration_s"]:
-            session["peak_w"] = max(session["peak_w"], reading.power_w)
-            self.trace.append({"t": elapsed, "w": reading.power_w})
-            self.trace = self.trace[-2000:]
-            self.store.save(session, (session["id"], elapsed, reading.voltage_v,
-                                     reading.current_a, reading.power_w, session["energy_wh"]))
+        session["peak_w"] = max(session["peak_w"], reading.power_w)
+        self.trace.append({"t": elapsed, "w": reading.power_w})
+        self.trace = self.trace[-2000:]
+        self.store.save(session, (session["id"], elapsed, reading.voltage_v,
+                                 reading.current_a, reading.power_w, session["energy_wh"]))
         self.tick()
         return True
 
     def tick(self):
         if self.session and self.session["status"] == "running":
-            self.session["elapsed_s"] = min(self.clock() - self.started, self.session["duration_s"])
-            if self.session["elapsed_s"] >= self.session["duration_s"]:
-                self.finish("completed")
+            self.session["elapsed_s"] = max(0, self.clock() - self.started)
 
-    def finish(self, status="stopped"):
+    def finish(self, status="completed"):
         if not self.session or self.session["status"] != "running":
             raise StationError("진행 중인 측정이 없습니다.")
-        self.session["elapsed_s"] = min(self.clock() - self.started, self.session["duration_s"])
+        self.session["elapsed_s"] = max(0, self.clock() - self.started)
         self.session["status"] = status
         self.session["ended_at"] = utc_now()
         self.previous = None

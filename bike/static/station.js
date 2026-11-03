@@ -4,7 +4,7 @@ let state = null;
 let pending = false;
 let historyKey = "";
 const fmt = (value, digits = 2) => Number(value || 0).toFixed(digits);
-const labels = { running: "측정 중", completed: "3분 측정 완료", stopped: "측정 중단", interrupted: "프로그램 중단" };
+const labels = { running: "측정 중", completed: "측정 완료", stopped: "측정 중단", interrupted: "프로그램 중단" };
 
 async function request(path, body) {
   const options = { cache: "no-store", signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined };
@@ -58,16 +58,18 @@ function render(data) {
   el("energy").textContent = fmt(energy, 1);
   el("energy-wh").textContent = fmt(energy / 1000, 6) + " Wh";
   el("participant-label").textContent = session?.participant || "—";
-  const remaining = Math.max(0, Math.ceil(180 - (session?.elapsed_s || 0)));
-  el("timer").textContent = String(Math.floor(remaining / 60)).padStart(2, "0") + ":" + String(remaining % 60).padStart(2, "0");
-  el("time-progress").style.width = ((session?.elapsed_s || 0) / 180 * 100) + "%";
-  el("timer-note").textContent = running ? (data.fresh ? "실제 수신 구간만 전력량에 더합니다." : "수신이 지연되었습니다. 타이머는 진행되며 미수신 구간은 제외됩니다.") : session ? "결과가 Mac에 저장되었습니다." : "측정값이 수신되면 시작할 수 있습니다.";
+  el("timer").textContent = formatTime(session?.elapsed_s || 0);
+  el("timer").classList.toggle("long", (session?.elapsed_s || 0) >= 3600);
+  el("timer-note").textContent = running ? (data.fresh ? "쉬는 동안에도 시간은 계속 흐릅니다." : "수신 지연 · 미수신 구간은 제외합니다.") : session ? "결과가 Mac에 저장되었습니다." : "측정값을 수신하면 시작할 수 있어요.";
   const reading = data.fresh ? data.reading : null;
   el("power").textContent = reading ? fmt(reading.power_w, 3) + " W" : "— W";
   el("electrical").textContent = reading ? fmt(reading.voltage_v, 3) + " V / " + fmt(reading.current_a, 3) + " A" : "— V / — A";
   el("coverage").textContent = session ? fmt(session.coverage_pct, 1) + " %" : "— %";
-  el("target-result").hidden = !session?.target_wh;
-  if (session?.target_wh) el("target-result").textContent = "AI 소비량 " + fmt(session.target_wh, 4) + " Wh 대비 " + fmt(session.energy_wh / session.target_wh * 100, 1) + "%";
+  if (session) {
+    el("participant").value = session.participant || "";
+    el("target").value = session.target_wh == null ? "" : String(session.target_wh * 1000);
+  }
+  renderComparison(data);
   el("session-note").textContent = session ? "유효 계측 " + fmt(session.measured_s, 1) + "초 / 경과 " + fmt(session.elapsed_s, 1) + "초 · " + (demo ? "시뮬레이션 기록" : "USB 전달 전력량") + " · 측정 중 새로고침해도 Mac의 기록은 유지됩니다." : "시작 전에 받은 값은 참가자 전력량에 포함하지 않습니다. 기록은 Mac에 저장됩니다.";
   el("start").disabled = pending || running || !!session || !data.fresh;
   el("stop").disabled = pending || !running;
@@ -77,32 +79,111 @@ function render(data) {
   for (const [id, mode] of [["real-mode", "ble"], ["usb-mode", "usb"], ["demo-mode", "demo"]]) {
     el(id).disabled = pending || running;
     el(id).classList.toggle("selected", data.mode === mode);
+    el(id).setAttribute("aria-pressed", String(data.mode === mode));
   }
   el("transport-controls").hidden = demo;
+  el("mode-help").textContent = demo
+    ? "장비 없이 화면과 누적 계산을 확인하는 테스트입니다. 실제 발전량은 아닙니다."
+    : data.mode === "usb"
+      ? "Mac과 FNB58의 PC 포트를 데이터 케이블로 연결한 뒤 기기를 찾아주세요."
+      : "FNB58에 전원을 공급한 뒤 기기를 찾아주세요. Bluetooth 연결은 Mac에서 진행합니다.";
+  if (!demo) {
+    for (const mode of ["usb", "ble"]) {
+      const card = el(mode + "-card");
+      const parent = el(data.mode === mode ? "primary-transport" : "secondary-transport");
+      // Move only on a mode change, not every poll: retain selection and focus.
+      if (card.parentElement !== parent) parent.append(card);
+    }
+  }
   for (const mode of ["usb", "ble"]) {
     const t = data.transports?.[mode] || {};
     const prefix = mode === "usb" ? "usb-" : "";
-    el(prefix + "scan").disabled = pending || t.busy || t.connected || t.connecting;
-    el(prefix + "connect").disabled = pending || t.busy || t.connected || t.connecting || !el(prefix + "devices").value;
-    el(prefix + "disconnect").disabled = pending || running || t.busy || !(t.connected || t.connecting);
-    el(mode + "-selected").textContent = data.mode === mode ? "· 누적에 사용" : "· 비교 전용";
+    const active = t.connected || t.connecting;
+    const selectable = !!el(prefix + "devices").value;
+    el(prefix + "scan").hidden = active;
+    el(prefix + "scan").textContent = t.busy ? "찾는 중…" : selectable ? "다시 찾기" : "기기 찾기";
+    el(prefix + "scan").disabled = pending || t.busy || active;
+    el(mode + "-picker").hidden = active || !selectable;
+    el(prefix + "devices").disabled = pending || t.busy;
+    el(prefix + "connect").disabled = pending || t.busy || active || !selectable;
+    el(prefix + "disconnect").hidden = !active;
+    el(prefix + "disconnect").disabled = pending || running || t.busy || !active;
+    const issue = !active && /오류|실패|못했습니다|권한|초과/.test(t.message || "");
+    const status = t.busy ? "검색 중" : t.connecting ? "연결 중" : t.fresh ? "수신 중" : t.connected ? "데이터 대기" : issue ? "연결 확인 필요" : "연결 대기";
+    el(mode + "-status").textContent = status;
+    el(mode + "-status").classList.toggle("live", !!t.fresh);
     const r = t.fresh ? t.reading : null;
-    el(mode + "-diagnostic").textContent = (t.message || "연결 대기") + " · " +
-      (r ? fmt(r.voltage_v, 3) + " V / " + fmt(r.current_a, 3) + " A / " + fmt(r.power_w, 3) + " W" : "수신값 없음") +
-      " · 유효 샘플 " + (t.samples || 0) + " · 패킷 " + (t.raw_packets || 0) +
-      " · 형식 오류 " + (t.bad_frames || 0) + (t.sample_age_s == null ? "" : " · 마지막 수신 " + fmt(t.sample_age_s, 1) + "초 전");
+    el(mode + "-diagnostic").textContent = r
+      ? fmt(r.voltage_v, 3) + " V · " + fmt(r.current_a, 3) + " A · " + fmt(r.power_w, 3) + " W"
+      : t.connected ? "연결됐습니다. 새 측정값을 기다리고 있어요."
+      : t.connecting ? "FNB58에 연결하고 있어요."
+      : t.busy ? "주변 기기를 찾고 있어요. 잠시 기다려주세요."
+      : issue || /범위/.test(t.message || "") ? t.message
+      : selectable ? "찾은 기기를 선택하고 연결하기를 눌러주세요."
+      : "기기 찾기를 눌러 FNB58을 연결하세요.";
+    el(mode + "-stats").textContent = "유효 샘플 " + (t.samples || 0) + " · 패킷 " + (t.raw_packets || 0) +
+      " · 형식 오류 " + (t.bad_frames || 0) + (t.sample_age_s == null ? "" : " · 마지막 수신 " + fmt(t.sample_age_s, 1) + "초 전") +
+      (t.message ? " · " + t.message : "");
   }
-  el("device-name").textContent = data.device_name || "선택된 기기 없음";
-  el("device-message").textContent = data.message;
-  drawChart(data.trace || []);
+  el("device-name").textContent = demo ? "시뮬레이션" : data.device_name || "연결 대기";
+  drawChart(data.trace || [], session?.elapsed_s || 0);
 }
 
-function drawChart(trace) {
+function renderComparison(data) {
+  const session = data.session;
+  // A saved session owns its comparison target. Draft edits only preview idle sessions.
+  const targetWh = session ? session.target_wh : Number(el("target").value) / 1000;
+  const valid = Number.isFinite(targetWh) && targetWh > 0;
+  el("comparison-content").hidden = !valid;
+  el("target-empty").hidden = valid;
+  if (!valid) {
+    el("comparison-phase").textContent = "기준 미입력";
+    el("comparison-percent").textContent = "—";
+    el("comparison-fill").style.width = "0%";
+    el("comparison-progress").setAttribute("aria-valuenow", "0");
+    el("comparison-progress").setAttribute("aria-valuetext", "AI 비교 기준 미입력");
+    el("comparison-progress").removeAttribute("title");
+    return;
+  }
+  const generated = Math.max(0, session?.energy_mwh || 0);
+  const target = targetWh * 1000;
+  const ratio = generated / target;
+  const percent = ratio * 100;
+  const number = (value, digits = 2) => value.toLocaleString("ko-KR", { maximumFractionDigits: digits });
+  const bounded = Math.min(100, Math.max(0, percent));
+  el("comparison-phase").textContent = !session ? "측정 준비" : session.status === "running" ? "측정 중" : "측정 결과";
+  el("comparison-generated-label").textContent = data.mode === "demo" ? "시뮬레이션 에너지" : "이번 발전량";
+  el("comparison-generated").textContent = number(generated);
+  el("comparison-target").textContent = number(target);
+  el("comparison-equivalent").textContent = "AI 생성 " + (ratio > 0 && ratio < 0.01 ? "0.01회분 미만" : number(ratio) + "회분") + "에 해당";
+  el("comparison-percent").textContent = number(percent, 1) + "%";
+  el("comparison-fill").style.width = bounded + "%";
+  el("comparison-progress").setAttribute("aria-valuenow", String(bounded));
+  el("comparison-progress").setAttribute("aria-valuetext", "AI 생성 1회 대비 " + number(percent, 1) + "%");
+  el("comparison-remaining").textContent = ratio >= 1
+    ? "AI 생성 1회 기준 도달 · " + number(generated - target) + " mWh 초과"
+    : "AI 생성 1회 기준까지 " + number(target - generated) + " mWh 남았어요.";
+  el("comparison-progress").setAttribute("title", el("comparison-remaining").textContent);
+}
+
+function formatTime(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  const clock = String(minutes).padStart(2, "0") + ":" + String(total % 60).padStart(2, "0");
+  return hours ? String(hours).padStart(2, "0") + ":" + clock : clock;
+}
+
+function drawChart(trace, elapsed) {
+  // Keep the bounded recent trace visible even in sessions longer than 3 min.
+  const left = trace.length ? trace[0].t : 0;
+  const right = Math.max(left + 1, elapsed, trace.length ? trace[trace.length - 1].t : 0);
+  el("chart-range").textContent = formatTime(left) + " — " + formatTime(right) + " · W";
   const max = Math.max(1, ...trace.map((point) => point.w));
   let path = "";
   let before = null;
   for (const point of trace) {
-    const x = point.t / 180 * 900;
+    const x = (point.t - left) / (right - left) * 900;
     const y = 105 - point.w / max * 95;
     path += (before === null || point.t - before > 2 ? "M" : "L") + x.toFixed(2) + " " + y.toFixed(2);
     before = point.t;
@@ -160,9 +241,10 @@ async function refresh() {
 el("start").onclick = () => {
   const raw = el("target").value.trim();
   const target = raw ? Number(raw) : null;
-  if (target !== null && (!Number.isFinite(target) || target <= 0)) return error("목표 Wh는 0보다 큰 숫자로 입력하세요.");
-  action("/api/session/start", { participant: el("participant").value, target_wh: target });
+  if (target !== null && (!Number.isFinite(target) || target <= 0)) return error("목표 mWh는 0보다 큰 숫자로 입력하세요.");
+  action("/api/session/start", { participant: el("participant").value, target_wh: target === null ? null : target / 1000 });
 };
+el("target").oninput = () => state && renderComparison(state);
 el("stop").onclick = () => action("/api/session/stop");
 el("reset").onclick = async () => {
   if (await action("/api/session/reset")) { el("participant").value = ""; el("target").value = ""; }

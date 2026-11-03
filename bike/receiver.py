@@ -33,7 +33,7 @@ class Receiver:
         self.busy = True
         self.station.message = "FNB58 검색 중… Mac의 Bluetooth 권한 요청을 확인하세요."
         try:
-            found = await scanner.discover(timeout=6)
+            found = await asyncio.wait_for(scanner.discover(timeout=6), timeout=10)
             self.devices = {dev.address: dev for dev in found
                             if "FNB58" in (dev.name or "").upper()
                             or "FNB-58" in (dev.name or "").upper()}
@@ -41,6 +41,19 @@ class Receiver:
                                     "FNB58을 찾지 못했습니다. 전력계의 Bluetooth·전원·Mac 권한을 확인하세요.")
             return [{"id": dev.address, "name": dev.name or "FNB58"}
                     for dev in self.devices.values()]
+        except Exception as exc:
+            if "not authorized" in str(exc).lower():
+                message = ("Mac Bluetooth 권한이 없습니다. 시스템 설정 → 개인정보 보호 및 보안 → "
+                           "Bluetooth에서 서버를 실행한 앱(Terminal·iTerm·Codex 등)을 허용한 뒤 "
+                           "서버를 종료하고 다시 실행하세요.")
+            elif isinstance(exc, asyncio.TimeoutError):
+                message = "BLE 검색 시간이 초과됐습니다. Mac Bluetooth 상태와 접근 권한을 확인하세요."
+            else:
+                message = "BLE 검색 실패: " + str(exc)[:240]
+            # Keep the failure next to the device controls, not just in the
+            # page-top HTTP error banner (which may be outside the viewport).
+            self.station.message = message
+            raise StationError(message) from exc
         finally:
             self.busy = False
 
