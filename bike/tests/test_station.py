@@ -3,6 +3,7 @@ import math
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -222,6 +223,12 @@ class StationTests(unittest.TestCase):
 
 
 class ApiTests(unittest.TestCase):
+    def setUp(self):
+        # Standalone tests must not load booth credentials or contact production.
+        client = patch('bike.app.client_from_env', return_value=None)
+        client.start()
+        self.addCleanup(client.stop)
+
     def test_demo_session_persists_across_clients_and_exports(self):
         with tempfile.TemporaryDirectory() as folder:
             with TestClient(create_app(Path(folder) / "db.sqlite3")) as client:
