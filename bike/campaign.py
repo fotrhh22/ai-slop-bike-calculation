@@ -44,6 +44,7 @@ class CampaignSync:
         self.error=''
         self.last_sync=None
         self.starting=False
+        self.queue_revision=0
         self.lock=asyncio.Lock()
 
     def snapshot(self):
@@ -59,8 +60,10 @@ class CampaignSync:
                 if result.get('result',{}).get('id') != session_id or not result.get('print_queued'):
                     raise StationError('종료 기록 확인 실패. 같은 기록으로 다시 동기화합니다.')
                 self.store.acknowledge(session_id)
+            revision=self.queue_revision
             result=await asyncio.to_thread(self.client.call,'/entries')
-            self.store.cache('entries',result['entries'])
+            if revision==self.queue_revision:
+                self.store.cache('entries',result['entries'])
             from .measurement import utc_now
             self.last_sync=utc_now();self.error=''
         except Exception as exc:
@@ -81,6 +84,23 @@ class CampaignSync:
             if entry['energy_basis']=='unavailable': raise StationError('AI 계측 확인이 필요해 목표를 확정할 수 없습니다.')
             self.selected=entry
             return entry
+
+    async def delete(self,entry_id):
+        async with self.lock:
+            if self.client is None: raise StationError('클라우드 연결 설정이 필요합니다.')
+            entry=next((e for e in self.snapshot()['entries'] if e['id']==entry_id),None)
+            current=(self.station.session or {}).get('campaign_entry') or {}
+            if (entry and (entry.get('state')!='waiting' or entry.get('bike_session_id'))) or current.get('id')==entry_id:
+                raise StationError('측정 중이거나 이미 사용한 참가자는 삭제할 수 없습니다.')
+            try:
+                response=await asyncio.to_thread(self.client.call,'/entries/'+entry_id+'/delete',{})
+                if not isinstance(response.get('deleted'),bool): raise ValueError('invalid response')
+            except Exception:
+                raise StationError('삭제를 확인하지 못했습니다. 목록을 확인하고 다시 시도하세요. 측정 중인 참가자는 삭제할 수 없습니다.') from None
+            self.queue_revision+=1
+            self.store.forget_waiting_entry(entry_id)
+            if self.selected and self.selected['id']==entry_id:self.selected=None
+            return {'deleted':True}
 
     async def start(self):
         async with self.lock:

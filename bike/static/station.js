@@ -73,6 +73,9 @@ function render(data) {
   if (!session && data.campaign?.selected) {
     el("participant").value = data.campaign.selected.participant_code;
     el("target").value = data.campaign.selected.target_wh == null ? "" : String(data.campaign.selected.target_wh * 1000);
+  } else if (!session && data.campaign?.enabled) {
+    el("participant").value = "";
+    el("target").value = "";
   }
   renderCampaign(data);
   renderComparison(data);
@@ -150,12 +153,26 @@ function renderCampaign(data) {
   const entries = (campaign.entries || []).filter(e => e.participant_code.includes(query));
   if (!entries.length) { list.textContent = "대기 참가자가 없습니다."; return; }
   for (const entry of entries) {
+    const row = document.createElement("div");
+    row.className = "queue-participant-row";
     const button = document.createElement("button");
     button.className = "queue-participant" + (campaign.selected?.id === entry.id ? " selected" : "");
     button.textContent = entry.participant_code + " · " + (entry.energy_basis === "tokens_only" ? "Gemini / 토큰 전용" : entry.target_wh == null ? "계측 확인 필요" : fmt(entry.target_wh,4)+" Wh") + (entry.state === "measuring" ? " · 측정 중" : "");
     button.disabled = pending || !!data.session || campaign.starting || entry.energy_basis === "unavailable";
     button.onclick = () => action("/api/campaign/select", {entry_id:entry.id});
-    list.append(button);
+    const remove = document.createElement("button");
+    remove.className = "queue-participant-delete";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", entry.participant_code + " 참가자 데이터 삭제");
+    remove.title = "참가자와 연결된 데이터 삭제";
+    remove.disabled = pending || campaign.starting || entry.state !== "waiting" || !!entry.bike_session_id || data.session?.campaign_entry?.id === entry.id;
+    remove.onclick = () => {
+      if (window.confirm(entry.participant_code + " 참가자와 AI 영수증·이미지·생성/판정 기록을 삭제할까요?")) {
+        void action("/api/campaign/delete", {entry_id:entry.id});
+      }
+    };
+    row.append(button, remove);
+    list.append(row);
   }
 }
 

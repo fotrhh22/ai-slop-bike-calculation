@@ -63,3 +63,7 @@
 .queue-participant { padding: 14px 16px; border: 1px solid #ccc; border-radius: 12px; background: #f8f8f2; font: inherit; cursor: pointer; }
 .queue-participant.selected { border-color: #232323; background: #fff09a; }
 .queue-participant:disabled { opacity: .5; cursor: default; }
+.queue-participant-row { display: inline-flex; max-width: 100%; }
+.queue-participant-row .queue-participant { border-radius: 12px 0 0 12px; text-align: left; }
+.queue-participant-delete { min-width: 44px; padding: 8px 12px; border: 1px solid #ccc; border-left: 0; border-radius: 0 12px 12px 0; background: #fff; color: #a22; font-size: 25px; cursor: pointer; }
+.queue-participant-delete:disabled { opacity: .4; cursor: default; }

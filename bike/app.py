@@ -97,6 +97,10 @@ def create_app(db_path=None, campaign_client=None):
     async def campaign_select(body: SelectionBody):
         return await app.state.campaign.select(body.entry_id)
 
+    @app.post('/api/campaign/delete')
+    async def campaign_delete(body: SelectionBody):
+        return await app.state.campaign.delete(body.entry_id)
+
     # async endpoints below intentionally do not await while changing session
     # state; simultaneous iPad Start requests are serialized by the event loop.
     @app.get("/api/history")

@@ -100,6 +100,12 @@ class Store:
         self.db.commit()
         return self.db.execute('select session_id from start_intents where entry_id=?',(entry_id,)).fetchone()[0]
 
+    def forget_waiting_entry(self,entry_id):
+        entries=[e for e in self.cached('entries',[]) if e['id']!=entry_id]
+        self.db.execute('INSERT OR REPLACE INTO campaign_cache VALUES(?,?)',('entries',json.dumps(entries)))
+        self.db.execute('DELETE FROM start_intents WHERE entry_id=?',(entry_id,))
+        self.db.commit()
+
     def pending(self):
         return [(r[0],json.loads(r[1])) for r in self.db.execute('select session_id,payload from sync_outbox where acked=0 order by rowid')]
 

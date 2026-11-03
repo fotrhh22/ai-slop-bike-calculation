@@ -61,6 +61,53 @@ class MeasurementTests(unittest.TestCase):
 
 
 class SyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_delete_removes_cloud_entry_selection_cache_and_start_intent(self):
+        store=Store(':memory:');self.addCleanup(store.close);station=Station(store)
+        entry={'id':str(uuid4()),'participant_code':'DELETE01','state':'waiting'}
+        class Cloud:
+            def call(self,path,body=None):
+                if path.endswith('/delete'):return {'deleted':True}
+                return {'entries':[]}
+        sync=CampaignSync(store,station,Cloud())
+        store.cache('entries',[entry]);old_intent=store.intent(entry['id']);sync.selected=entry
+        self.assertTrue((await sync.delete(entry['id']))['deleted'])
+        self.assertEqual(sync.snapshot()['entries'],[]);self.assertIsNone(sync.selected)
+        self.assertNotEqual(store.intent(entry['id']),old_intent)
+
+    async def test_delete_failure_preserves_local_data_and_measuring_entry_is_protected(self):
+        store=Store(':memory:');self.addCleanup(store.close);station=Station(store)
+        entry={'id':str(uuid4()),'participant_code':'KEEP0001','state':'waiting'}
+        from unittest.mock import Mock
+        cloud=Mock();cloud.call.side_effect=OSError('offline')
+        sync=CampaignSync(store,station,cloud);store.cache('entries',[entry]);sync.selected=entry
+        from bike.measurement import StationError
+        with self.assertRaises(StationError):await sync.delete(entry['id'])
+        self.assertEqual(sync.snapshot()['entries'],[entry]);self.assertEqual(sync.selected,entry)
+        store.cache('entries',[{**entry,'state':'measuring'}]);cloud.reset_mock()
+        with self.assertRaises(StationError):await sync.delete(entry['id'])
+        cloud.call.assert_not_called()
+
+    async def test_refresh_cannot_restore_stale_entry_after_delete(self):
+        store=Store(':memory:');self.addCleanup(store.close);station=Station(store)
+        entry={'id':str(uuid4()),'participant_code':'RACE0001','state':'waiting'}
+        from threading import Event
+        requested,release=Event(),Event()
+        class Cloud:
+            def call(self,path,body=None):
+                if path=='/entries':
+                    requested.set();release.wait(2);return {'entries':[entry]}
+                return {'deleted':True}
+        sync=CampaignSync(store,station,Cloud());store.cache('entries',[entry])
+        refresh=asyncio.create_task(sync.sync_once())
+        self.assertTrue(await asyncio.to_thread(requested.wait,1))
+        delete=asyncio.create_task(sync.delete(entry['id']))
+        try:
+            await asyncio.wait_for(delete,1)
+        finally:
+            release.set()
+        await refresh
+        self.assertEqual(sync.snapshot()['entries'],[])
+
     async def test_lost_completion_response_reuses_same_id_and_survives_reconnect(self):
         store=Store(':memory:');self.addCleanup(store.close);clock=Clock();station=Station(store,clock)
         station.mode='usb';station.connected=True;station.ingest(Reading(5,0.11))
