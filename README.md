@@ -56,6 +56,12 @@ BIKE_WORKER_TOKEN=<Render와 동일한 32자 이상 토큰>
 
 서버 SQL·설정은 [전체 적용 안내](https://github.com/fotrhh22/ai-slop-stop/blob/main/docs/campaign-bike-rollout.md)를 따릅니다. 현재 기능은 main에 통합되어 있으며 이전 기능 브랜치를 사용할 필요 없습니다. `BIKE_API_BASE`가 없으면 독립 장비 측정 모드이고, 공식 참가자 연동은 비활성입니다.
 
+## AI 판정의 CLIP 보조값
+
+챌린지에서는 LLM 판정과 별개로 **CLIP 코사인 유사도**를 기록해 판정 검토의 객관성과 수치 비교 근거를 보완합니다. 정답 확률이나 단독 탈락 기준은 아닙니다. Render 메모리 제한 때문에 CLIP 모델은 로컬 Mac에서 실행하고, Render가 전달한 이미지 쌍의 **코사인 점수·실행 정보만 서버로 반환**합니다. 임베딩 벡터·가중치는 반환하지 않습니다.
+
+이 CLIP 워커는 챌린지 저장소의 별도 프로그램이며 자전거의 FNB58 수신 프로그램과 역할이 다릅니다. 운영 비교는 Render를 통해 작업을 전달하고, 저장된 이미지의 오프라인 검증은 서버 없이 실행합니다. [구조·검증 결과](https://github.com/fotrhh22/ai-slop-stop/blob/main/docs/model-validation-results.md#mac-로컬-clip)
+
 ## 참가자 코드·목표 연계
 
 내부 challenge UUID는 챌린지 시작 시, 현장 코드 8자리는 PASS 시 생성합니다. 서버 DB에서 고유 제약으로 중복을 막고, 코드·영수증·모델·사용량을 연결합니다. 이 코드는 사람의 이름이나 영구 계정이 아닌 챌린지별 매칭 값입니다.
